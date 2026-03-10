@@ -61,6 +61,9 @@ A professional, modular tool that automates PostgreSQL database backup and resto
 # Create a backup with legacy backup.conf
 db-backupper backup
 
+# Run setup wizard for legacy or project mode
+db-backupper setup
+
 # List available named project configs
 db-backupper list-projects
 
@@ -200,6 +203,18 @@ db-backupper --project app-prod backup
 # Backup with S3 path prefix
 db-backupper --project app-prod backup --prefix "production/"
 db-backupper --project app-prod backup --prefix "weekly/2024/"
+```
+
+#### Setup Commands
+```bash
+# Run interactive setup wizard
+db-backupper setup
+
+# Keep existing legacy mode explicitly
+db-backupper setup --mode legacy
+
+# Create a named project from current legacy backup.conf
+db-backupper setup --mode project --name app-prod
 ```
 
 #### Project Discovery

@@ -12,6 +12,8 @@ LIB_DIR="$SCRIPT_DIR/../lib"
 source "$LIB_DIR/utils.sh"
 # shellcheck source=../lib/config.sh  
 source "$LIB_DIR/config.sh"
+# shellcheck source=../lib/setup.sh
+source "$LIB_DIR/setup.sh"
 # shellcheck source=../lib/database.sh
 source "$LIB_DIR/database.sh"
 # shellcheck source=../lib/backup.sh
@@ -489,6 +491,100 @@ EOF
     rm -rf "$temp_root"
 }
 
+# Test 10: Setup command migrates legacy config safely
+test_setup_command() {
+    test_info "Testing setup command..."
+
+    local temp_root
+    temp_root=$(mktemp -d)
+    local temp_home="${temp_root}/home"
+    local temp_workdir="${temp_root}/workdir"
+    local cli_path="${SCRIPT_DIR}/../db-backupper"
+    local output=""
+
+    mkdir -p "${temp_home}/.config/db-backupper"
+    mkdir -p "${temp_workdir}"
+
+    cat > "${temp_home}/.config/db-backupper/backup.conf" << 'EOF'
+AWS_PROFILE="legacy"
+S3_BUCKET_NAME="legacy-bucket"
+S3_BACKUP_PATH="legacy/"
+POSTGRES_URI="postgresql://user:password@localhost:5432/legacydb"
+DOCKER_CONTAINER_NAME="legacy-postgres"
+EOF
+
+    if output=$(HOME="$temp_home" "$cli_path" setup --mode project --name app-prod 2>/dev/null); then
+        test_pass "setup migrates legacy config in non-interactive project mode"
+    else
+        test_fail "setup failed in non-interactive project mode"
+    fi
+
+    if [[ -f "${temp_home}/.config/db-backupper/projects/app-prod.conf" ]] && cmp -s "${temp_home}/.config/db-backupper/backup.conf" "${temp_home}/.config/db-backupper/projects/app-prod.conf"; then
+        test_pass "setup created project config from legacy config"
+    else
+        test_fail "setup did not create expected project config"
+    fi
+
+    if [[ -f "${temp_home}/.config/db-backupper/backup.conf" ]]; then
+        test_pass "setup keeps legacy config in place"
+    else
+        test_fail "setup removed legacy config unexpectedly"
+    fi
+
+    if [[ "$output" == *"db-backupper --project app-prod backup"* ]] && [[ "$output" == *"db-backupper --project app-prod crontab"* ]]; then
+        test_pass "setup prints next steps for project mode"
+    else
+        test_fail "setup output is missing next-step commands"
+    fi
+
+    if HOME="$temp_home" "$cli_path" setup --mode project --name app-prod >/dev/null 2>&1; then
+        test_fail "setup overwrote an existing project config unexpectedly"
+    else
+        test_pass "setup rejects overwriting an existing project config"
+    fi
+
+    if HOME="$temp_home" "$cli_path" setup --mode project --name app/prod >/dev/null 2>&1; then
+        test_fail "setup accepted an invalid project name"
+    else
+        test_pass "setup rejects invalid project names"
+    fi
+
+    if HOME="$temp_home" "$cli_path" --project app-prod setup >/dev/null 2>&1; then
+        test_fail "setup accepted the global --project flag unexpectedly"
+    else
+        test_pass "setup rejects the global --project flag"
+    fi
+
+    rm -rf "$temp_root"
+
+    temp_root=$(mktemp -d)
+    temp_home="${temp_root}/home"
+    temp_workdir="${temp_root}/workdir"
+    mkdir -p "${temp_home}/.config/db-backupper" "${temp_workdir}"
+
+    cat > "${temp_home}/.config/db-backupper/backup.conf" << 'EOF'
+AWS_PROFILE="wizard"
+S3_BUCKET_NAME="wizard-bucket"
+S3_BACKUP_PATH="wizard/"
+POSTGRES_URI="postgresql://user:password@localhost:5432/wizarddb"
+DOCKER_CONTAINER_NAME="wizard-postgres"
+EOF
+
+    if output=$(cd "$temp_workdir" && printf '2\nwizard-app\n' | HOME="$temp_home" "$cli_path" setup 2>/dev/null); then
+        test_pass "interactive setup wizard migrates to project mode"
+    else
+        test_fail "interactive setup wizard failed"
+    fi
+
+    if [[ -f "${temp_home}/.config/db-backupper/projects/wizard-app.conf" ]]; then
+        test_pass "interactive setup wizard created project config"
+    else
+        test_fail "interactive setup wizard did not create project config"
+    fi
+
+    rm -rf "$temp_root"
+}
+
 # Main test runner
 main() {
     test_info "Starting security test suite for db-backupper"
@@ -504,6 +600,7 @@ main() {
     test_project_config_support
     test_cli_project_flag
     test_list_projects
+    test_setup_command
     
     # Report results
     echo

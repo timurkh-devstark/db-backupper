@@ -18,6 +18,7 @@ CONFIG_DIR="$(get_script_dir)"
 
 # Source all modules
 source "${SCRIPT_DIR}/lib/config.sh"
+source "${SCRIPT_DIR}/lib/setup.sh"
 source "${SCRIPT_DIR}/lib/database.sh"
 source "${SCRIPT_DIR}/lib/backup.sh"
 source "${SCRIPT_DIR}/lib/restore.sh"
@@ -46,6 +47,7 @@ usage() {
     echo "                              <s3_url> is the full S3 path, e.g., s3://your-bucket/postgres_dumps/dbname_timestamp.tar.gz"
     echo "  crontab                     Generate example crontab entries for automated backups."
     echo "  list-projects               List available named project configs."
+    echo "  setup                       Run setup wizard for legacy or project config mode."
     echo "  help                        Show this help message."
     echo ""
     echo "Legacy config lookup:"
@@ -124,6 +126,16 @@ main() {
         fi
         action_list_projects
         exit 0
+    fi
+
+    if [[ "$action" == "setup" ]]; then
+        if [[ -n "$project_name" ]]; then
+            log_error "ERROR: --project cannot be used with setup."
+            usage
+            exit 1
+        fi
+        action_setup "$@"
+        exit $?
     fi
 
     ACTIVE_PROJECT_NAME="$project_name"

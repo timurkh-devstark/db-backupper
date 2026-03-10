@@ -98,6 +98,7 @@ db-backupper/
 ├── lib/                     # Core library modules
 │   ├── utils.sh            # Logging, PATH setup, resource monitoring
 │   ├── config.sh           # Secure configuration loading and validation
+│   ├── setup.sh            # Setup wizard and legacy-to-project migration
 │   ├── database.sh         # PostgreSQL operations, URI parsing, security
 │   ├── backup.sh           # Backup workflow, S3 operations, path security
 │   └── restore.sh          # Restore workflow, archive security, validation
