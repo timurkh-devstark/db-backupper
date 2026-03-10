@@ -92,11 +92,13 @@ install_user_only() {
 
 setup_config() {
     local target_config_dir="$1"
+    local target_projects_dir="${target_config_dir}/projects"
     
     log_info "Setting up configuration directory: $target_config_dir"
     
     if check_root && [[ "$target_config_dir" == "$CONFIG_DIR" ]]; then
         sudo mkdir -p "$target_config_dir"
+        sudo mkdir -p "$target_projects_dir"
         if [[ ! -f "$target_config_dir/backup.conf" ]]; then
             sudo cp "${SCRIPT_DIR}/backup.conf.example" "$target_config_dir/backup.conf"
             sudo chmod 600 "$target_config_dir/backup.conf"
@@ -105,8 +107,17 @@ setup_config() {
         else
             log_info "Configuration file already exists at $target_config_dir/backup.conf"
         fi
+
+        if [[ ! -f "$target_projects_dir/example.conf" ]]; then
+            sudo cp "${SCRIPT_DIR}/project.conf.example" "$target_projects_dir/example.conf"
+            sudo chmod 600 "$target_projects_dir/example.conf"
+            log_success "Project configuration template created at $target_projects_dir/example.conf"
+        else
+            log_info "Project configuration template already exists at $target_projects_dir/example.conf"
+        fi
     else
         mkdir -p "$target_config_dir"
+        mkdir -p "$target_projects_dir"
         if [[ ! -f "$target_config_dir/backup.conf" ]]; then
             cp "${SCRIPT_DIR}/backup.conf.example" "$target_config_dir/backup.conf"
             chmod 600 "$target_config_dir/backup.conf"
@@ -114,6 +125,14 @@ setup_config() {
             log_warning "Please edit $target_config_dir/backup.conf with your settings"
         else
             log_info "Configuration file already exists at $target_config_dir/backup.conf"
+        fi
+
+        if [[ ! -f "$target_projects_dir/example.conf" ]]; then
+            cp "${SCRIPT_DIR}/project.conf.example" "$target_projects_dir/example.conf"
+            chmod 600 "$target_projects_dir/example.conf"
+            log_success "Project configuration template created at $target_projects_dir/example.conf"
+        else
+            log_info "Project configuration template already exists at $target_projects_dir/example.conf"
         fi
     fi
 }
@@ -210,7 +229,7 @@ main() {
     log_info "Run 'db-backupper help' to see usage information"
     
     if [[ "$setup_config_flag" == true ]]; then
-        log_info "Don't forget to configure your backup.conf file with your AWS and database settings"
+        log_info "Don't forget to configure backup.conf for legacy mode or add files under projects/ for named project mode"
     fi
 }
 

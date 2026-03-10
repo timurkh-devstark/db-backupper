@@ -54,9 +54,13 @@ This guide covers development setup, testing procedures, architecture details, a
 
 2. **Development Configuration**:
    ```bash
-   # Copy example configuration
+   # Copy example legacy configuration
    cp backup.conf.example backup.conf
    
+   # Or create a named project config
+   mkdir -p ./.db-backupper/projects
+   cp project.conf.example ./.db-backupper/projects/app-dev.conf
+
    # Edit for local testing
    nano backup.conf
    ```
@@ -89,7 +93,8 @@ The tool follows a clean modular architecture with separation of concerns:
 db-backupper/
 ├── db-backupper              # Main executable and CLI interface
 ├── install.sh               # Installation script with user/system options
-├── backup.conf.example      # Configuration template
+├── backup.conf.example      # Legacy configuration template
+├── project.conf.example     # Named project configuration template
 ├── lib/                     # Core library modules
 │   ├── utils.sh            # Logging, PATH setup, resource monitoring
 │   ├── config.sh           # Secure configuration loading and validation
@@ -119,7 +124,7 @@ db-backupper/
 #### `config.sh` - Configuration Management
 - **Secure loading**: Prevents code injection via `load_config_secure()`
 - **Variable validation**: Whitelist-based configuration validation
-- **Multi-location support**: `./backup.conf` → `~/.config/` → `/etc/`
+- **Multi-location support**: legacy `backup.conf` and named `projects/<name>.conf`
 - **Error handling**: Comprehensive validation with detailed error messages
 
 #### `database.sh` - PostgreSQL Operations

@@ -22,40 +22,81 @@ source "${SCRIPT_DIR}/lib/database.sh"
 source "${SCRIPT_DIR}/lib/backup.sh"
 source "${SCRIPT_DIR}/lib/restore.sh"
 
-# Load configuration
-load_config
-
 # Usage information
 usage() {
-    echo "Usage: db-backupper <action> [options]"
+    echo "Usage: db-backupper [--project <name>] <action> [options]"
+    echo ""
+    echo "Global options:"
+    echo "  --project <name>            Use a named project config from ./.db-backupper/projects/,"
+    echo "                              ~/.config/db-backupper/projects/, or /etc/db-backupper/projects/."
+    echo "                              If omitted, the legacy backup.conf lookup is used."
     echo ""
     echo "Actions:"
     echo "  backup [--prefix <string>]  Dump PostgreSQL DB, compress, and upload to S3."
     echo "                              --prefix: Optional path prefix for S3 storage location."
-    echo "                                        e.g., 'folder1/folder2/' results in storing at 'S3_BACKUP_PATH/folder1/folder2/dbname_timestamp.tar.gz'"
+    echo "                                        e.g., 'folder1/folder2/' results in storing at 'postgres_dumps/folder1/folder2/dbname_timestamp.tar.gz'"
     echo "  download <s3_url> [dir]     Download archive from S3 and extract to current directory or specified directory."
-    echo "                              <s3_url> is the full S3 path, e.g., s3://${S3_BUCKET_NAME}/${S3_BACKUP_PATH}dbname_timestamp.tar.gz"
+    echo "                              <s3_url> is the full S3 path, e.g., s3://your-bucket/postgres_dumps/dbname_timestamp.tar.gz"
     echo "                              [dir] is an optional output directory (defaults to current directory)"
     echo "  restore <dump_path> [--purge|--no-purge]"
     echo "                              Restore from a SQL dump file. Optional flags to control database purging:"
     echo "                              --purge: Drop and recreate the database before restoring"
     echo "                              --no-purge: Preserve existing database (default, will ask if neither specified)"
     echo "  restore-legacy <s3_url>     (DEPRECATED) Download archive from S3, decompress, and restore to PostgreSQL DB in one step."
-    echo "                              <s3_url> is the full S3 path, e.g., s3://${S3_BUCKET_NAME}/${S3_BACKUP_PATH}dbname_timestamp.tar.gz"
+    echo "                              <s3_url> is the full S3 path, e.g., s3://your-bucket/postgres_dumps/dbname_timestamp.tar.gz"
     echo "  crontab                     Generate example crontab entries for automated backups."
+    echo "  list-projects               List available named project configs."
     echo "  help                        Show this help message."
     echo ""
-    echo "Configuration is read from: ${CONFIG_DIR}/backup.conf"
+    echo "Legacy config lookup:"
+    echo "  ./backup.conf"
+    echo "  ~/.config/db-backupper/backup.conf"
+    echo "  /etc/db-backupper/backup.conf"
+    echo ""
+    echo "Project config lookup:"
+    echo "  ./.db-backupper/projects/<name>.conf"
+    echo "  ~/.config/db-backupper/projects/<name>.conf"
+    echo "  /etc/db-backupper/projects/<name>.conf"
     echo ""
     echo "Example workflow:"
-    echo "  1. db-backupper download s3://${S3_BUCKET_NAME}/${S3_BACKUP_PATH}dbname_timestamp.tar.gz"
-    echo "  2. db-backupper restore ./dump_dbname_timestamp.sql --purge"
+    echo "  1. db-backupper --project production download s3://bucket/path/dbname_timestamp.tar.gz"
+    echo "  2. db-backupper --project production restore ./dump_dbname_timestamp.sql --purge"
 }
 
 # Main function
 main() {
-    # Check for required commands globally
-    check_all_commands
+    if [[ $# -eq 0 ]]; then
+        usage
+        exit 1
+    fi
+
+    local project_name=""
+    local parsed_args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project)
+                if [[ -n "$project_name" ]]; then
+                    log_error "ERROR: --project can only be specified once."
+                    usage
+                    exit 1
+                fi
+                if [[ -z "${2:-}" ]]; then
+                    log_error "ERROR: --project requires an argument."
+                    usage
+                    exit 1
+                fi
+                project_name="$2"
+                shift 2
+                ;;
+            *)
+                parsed_args+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    set -- "${parsed_args[@]}"
 
     if [[ $# -eq 0 ]]; then
         usage
@@ -64,6 +105,30 @@ main() {
 
     local action="$1"
     shift # Consume the action
+
+    if [[ "$action" == "help" || "$action" == "--help" || "$action" == "-h" ]]; then
+        usage
+        exit 0
+    fi
+
+    if [[ "$action" == "list-projects" ]]; then
+        if [[ -n "$project_name" ]]; then
+            log_error "ERROR: --project cannot be used with list-projects."
+            usage
+            exit 1
+        fi
+        if [[ $# -gt 0 ]]; then
+            log_error "ERROR: list-projects does not accept additional arguments."
+            usage
+            exit 1
+        fi
+        action_list_projects
+        exit 0
+    fi
+
+    ACTIVE_PROJECT_NAME="$project_name"
+    load_config "$project_name"
+    check_all_commands
 
     case "$action" in
         backup)

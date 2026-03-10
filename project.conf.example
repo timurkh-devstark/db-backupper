@@ -1,0 +1,11 @@
+# Configuration for a named db-backupper project
+
+# --- AWS Configuration ---
+AWS_PROFILE="default"
+S3_BUCKET_NAME="your-s3-bucket-name"
+S3_BACKUP_PATH="postgres_dumps/your-project/"
+
+
+# --- PostgreSQL Configuration ---
+POSTGRES_URI="postgresql://user:password@localhost:5432/dbname"
+DOCKER_CONTAINER_NAME="your_postgres_container_name"

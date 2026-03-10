@@ -159,6 +159,15 @@ action_crontab() {
     local script_path
     local log_dir
     local db_name_safe
+    local project_flag=""
+
+    if [[ -n "${ACTIVE_PROJECT_NAME:-}" ]]; then
+        project_flag=" --project \"${ACTIVE_PROJECT_NAME}\""
+    fi
+
+    if [[ -n "${POSTGRES_URI:-}" ]]; then
+        parse_postgres_uri "$POSTGRES_URI"
+    fi
     
     # Determine the script path
     if command -v db-backupper &> /dev/null && [[ "$(command -v db-backupper)" != *"$(pwd)"* ]]; then
@@ -195,6 +204,11 @@ action_crontab() {
     
     echo "Detected script path: $script_path"
     echo "Recommended log directory: $log_dir"
+    if [[ -n "${ACTIVE_PROJECT_NAME:-}" ]]; then
+        echo "Active project: ${ACTIVE_PROJECT_NAME}"
+    else
+        echo "Active mode: legacy backup.conf"
+    fi
     echo
     
     # Try to create log directory
@@ -219,19 +233,19 @@ action_crontab() {
     echo
     
     echo "# Daily backup at 2:00 AM (production environment)"
-    echo "0 2 * * * $script_path backup --prefix \"production/\" >> $log_dir/${db_name_safe}_backup.log 2>&1"
+    echo "0 2 * * * $script_path${project_flag} backup --prefix \"production/\" >> $log_dir/${db_name_safe}_backup.log 2>&1"
     echo
     
     echo "# Weekly backup on Sunday at 3:00 AM"
-    echo "0 3 * * 0 $script_path backup --prefix \"weekly/\" >> $log_dir/${db_name_safe}_weekly.log 2>&1"
+    echo "0 3 * * 0 $script_path${project_flag} backup --prefix \"weekly/\" >> $log_dir/${db_name_safe}_weekly.log 2>&1"
     echo
     
     echo "# Monthly backup on the 1st at 4:00 AM"
-    echo "0 4 1 * * $script_path backup --prefix \"monthly/\" >> $log_dir/${db_name_safe}_monthly.log 2>&1"
+    echo "0 4 1 * * $script_path${project_flag} backup --prefix \"monthly/\" >> $log_dir/${db_name_safe}_monthly.log 2>&1"
     echo
     
     echo "# Staging environment backup (daily at 1:00 AM)"
-    echo "0 1 * * * $script_path backup --prefix \"staging/\" >> $log_dir/${db_name_safe}_staging.log 2>&1"
+    echo "0 1 * * * $script_path${project_flag} backup --prefix \"staging/\" >> $log_dir/${db_name_safe}_staging.log 2>&1"
     echo
     
     echo "CRONTAB TIME FORMAT:"

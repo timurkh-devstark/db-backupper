@@ -44,43 +44,61 @@ A professional, modular tool that automates PostgreSQL database backup and resto
 
 3. **Configure:**
    ```bash
-   # Edit the configuration file created during installation
+   # Legacy mode: edit the configuration file created during installation
    sudo nano /etc/db-backupper/backup.conf  # system-wide
    # OR
    nano ~/.config/db-backupper/backup.conf  # user installation
+
+   # Project mode: copy the project template and create one file per project
+   sudo cp /etc/db-backupper/projects/example.conf /etc/db-backupper/projects/app-prod.conf
+   # OR
+   cp ~/.config/db-backupper/projects/example.conf ~/.config/db-backupper/projects/app-prod.conf
    ```
 
 ### Basic Usage
 
 ```bash
-# Create a backup
+# Create a backup with legacy backup.conf
 db-backupper backup
 
+# List available named project configs
+db-backupper list-projects
+
+# Create a backup for a named project
+db-backupper --project app-prod backup
+
 # Create a backup with prefix for organization
-db-backupper backup --prefix "production/"
+db-backupper --project app-prod backup --prefix "production/"
 
 # Download a backup
-db-backupper download s3://your-bucket/path/to/backup.tar.gz
+db-backupper --project app-prod download s3://your-bucket/path/to/backup.tar.gz
 
 # Restore a backup (with interactive purge option)
-db-backupper restore ./dump_dbname_20241201_120000.sql
+db-backupper --project app-prod restore ./dump_dbname_20241201_120000.sql
 
 # Restore with automatic database purging
-db-backupper restore ./dump_dbname_20241201_120000.sql --purge
+db-backupper --project app-prod restore ./dump_dbname_20241201_120000.sql --purge
 ```
 
 ## Configuration
 
-### Configuration File Locations
+### Legacy Configuration File Locations
 
-The tool looks for `backup.conf` in the following order:
+If `--project` is not provided, the tool looks for `backup.conf` in the following order:
 1. `./backup.conf` (current directory)
 2. `~/.config/db-backupper/backup.conf` (user config)
 3. `/etc/db-backupper/backup.conf` (system config)
 
+### Project Configuration File Locations
+
+If `--project <name>` is provided, the tool looks for `<name>.conf` in the following order:
+1. `./.db-backupper/projects/<name>.conf`
+2. `~/.config/db-backupper/projects/<name>.conf`
+3. `/etc/db-backupper/projects/<name>.conf`
+
 ### Configuration Variables
 
-Edit your `backup.conf` file with the following settings:
+Legacy and project config files use the same variables:
 
 ```bash
 # AWS Configuration
@@ -173,36 +191,45 @@ PATH=/home/username/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 
 #### Backup Commands
 ```bash
-# Basic backup
+# Basic backup with legacy config
 db-backupper backup
 
+# Basic backup with a project config
+db-backupper --project app-prod backup
+
 # Backup with S3 path prefix
-db-backupper backup --prefix "production/"
-db-backupper backup --prefix "weekly/2024/"
+db-backupper --project app-prod backup --prefix "production/"
+db-backupper --project app-prod backup --prefix "weekly/2024/"
+```
+
+#### Project Discovery
+```bash
+# List available project configs from local, user, and system locations
+db-backupper list-projects
 ```
 
 #### Download Commands
 ```bash
 # Download to current directory
-db-backupper download s3://bucket/path/to/backup.tar.gz
+db-backupper --project app-prod download s3://bucket/path/to/backup.tar.gz
 
 # Download to specific directory
-db-backupper download s3://bucket/path/to/backup.tar.gz /path/to/downloads/
+db-backupper --project app-prod download s3://bucket/path/to/backup.tar.gz /path/to/downloads/
 ```
 
 #### Restore Commands
 ```bash
 # Interactive restore (asks about database purging)
-db-backupper restore /path/to/dump_file.sql
+db-backupper --project app-prod restore /path/to/dump_file.sql
 
 # Force purge database before restore
-db-backupper restore /path/to/dump_file.sql --purge
+db-backupper --project app-prod restore /path/to/dump_file.sql --purge
 
 # Preserve existing database (merge mode)
-db-backupper restore /path/to/dump_file.sql --no-purge
+db-backupper --project app-prod restore /path/to/dump_file.sql --no-purge
 
 # Legacy restore (deprecated - downloads and restores in one step)
-db-backupper restore-legacy s3://bucket/path/to/backup.tar.gz
+db-backupper --project app-prod restore-legacy s3://bucket/path/to/backup.tar.gz
 ```
 
 ### Example Workflows
@@ -210,13 +237,13 @@ db-backupper restore-legacy s3://bucket/path/to/backup.tar.gz
 #### Standard Backup and Restore Workflow
 ```bash
 # 1. Create backup
-db-backupper backup --prefix "before-migration/"
+db-backupper --project app-prod backup --prefix "before-migration/"
 
 # 2. Later, download the backup
-db-backupper download s3://your-bucket/postgres_dumps/before-migration/mydb_20241201_120000.tar.gz
+db-backupper --project app-prod download s3://your-bucket/postgres_dumps/before-migration/mydb_20241201_120000.tar.gz
 
 # 3. Restore to database (with purge for clean restore)
-db-backupper restore ./dump_mydb_20241201_120000.sql --purge
+db-backupper --project app-prod restore ./dump_mydb_20241201_120000.sql --purge
 ```
 
 #### Quick Testing Workflow
