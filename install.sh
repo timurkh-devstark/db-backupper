@@ -6,11 +6,13 @@ set -eo pipefail
 
 INSTALL_DIR="/usr/local/bin"
 LIB_DIR="/usr/local/lib/db-backupper"
-CONFIG_DIR="/etc/db-backupper"
 USER_BIN_DIR="$HOME/.local/bin"
 USER_LIB_DIR="$HOME/.local/lib/db-backupper"
 USER_CONFIG_DIR="$HOME/.config/db-backupper"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_OWNER_USER=""
+CONFIG_OWNER_GROUP=""
+CONFIG_OWNER_HOME=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -37,6 +39,18 @@ log_error() {
 
 check_root() {
     [[ $EUID -eq 0 ]]
+}
+
+resolve_config_owner() {
+    if check_root && [[ -n "${SUDO_USER:-}" ]] && [[ "${SUDO_USER}" != "root" ]]; then
+        CONFIG_OWNER_USER="$SUDO_USER"
+        CONFIG_OWNER_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+    else
+        CONFIG_OWNER_USER="$(id -un)"
+        CONFIG_OWNER_HOME="$HOME"
+    fi
+
+    CONFIG_OWNER_GROUP="$(id -gn "$CONFIG_OWNER_USER")"
 }
 
 install_system_wide() {
@@ -96,7 +110,7 @@ setup_config() {
     
     log_info "Setting up configuration directory: $target_config_dir"
     
-    if check_root && [[ "$target_config_dir" == "$CONFIG_DIR" ]]; then
+    if check_root; then
         sudo mkdir -p "$target_config_dir"
         sudo mkdir -p "$target_projects_dir"
         if [[ ! -f "$target_config_dir/backup.conf" ]]; then
@@ -115,6 +129,8 @@ setup_config() {
         else
             log_info "Project configuration template already exists at $target_projects_dir/example.conf"
         fi
+
+        sudo chown -R "${CONFIG_OWNER_USER}:${CONFIG_OWNER_GROUP}" "$target_config_dir"
     else
         mkdir -p "$target_config_dir"
         mkdir -p "$target_projects_dir"
@@ -153,6 +169,7 @@ usage() {
 
 main() {
     log_info "db-backupper installation script"
+    resolve_config_owner
     
     # Check if files exist
     if [[ ! -f "${SCRIPT_DIR}/db-backupper" ]]; then
@@ -214,7 +231,8 @@ main() {
             fi
             install_system_wide
             if [[ "$setup_config_flag" == true ]]; then
-                setup_config "$CONFIG_DIR"
+                log_info "Preparing user-scoped config for ${CONFIG_OWNER_USER} at ${CONFIG_OWNER_HOME}/.config/db-backupper"
+                setup_config "${CONFIG_OWNER_HOME}/.config/db-backupper"
             fi
             ;;
         user)
@@ -229,7 +247,8 @@ main() {
     log_info "Run 'db-backupper help' to see usage information"
     
     if [[ "$setup_config_flag" == true ]]; then
-        log_info "Don't forget to configure backup.conf for legacy mode or add files under projects/ for named project mode"
+        log_info "Active configs live under ${CONFIG_OWNER_HOME}/.config/db-backupper"
+        log_info "Configure backup.conf for legacy mode or add files under projects/ for named project mode"
     fi
 }
 

@@ -69,9 +69,7 @@ load_config_secure() {
 
 find_legacy_config_file() {
     local config_locations=(
-        "./backup.conf"
         "${HOME}/.config/db-backupper/backup.conf"
-        "/etc/db-backupper/backup.conf"
     )
     local location
 
@@ -88,9 +86,7 @@ find_legacy_config_file() {
 find_project_config_file() {
     local project_name="$1"
     local config_locations=(
-        "./.db-backupper/projects/${project_name}.conf"
         "${HOME}/.config/db-backupper/projects/${project_name}.conf"
-        "/etc/db-backupper/projects/${project_name}.conf"
     )
     local location
 
@@ -106,9 +102,7 @@ find_project_config_file() {
 
 list_project_configs() {
     local project_dirs=(
-        "./.db-backupper/projects"
         "${HOME}/.config/db-backupper/projects"
-        "/etc/db-backupper/projects"
     )
     local dir
     local config_path
@@ -154,9 +148,7 @@ list_project_configs() {
 action_list_projects() {
     local project_lines=""
     local project_dirs=(
-        "./.db-backupper/projects"
         "${HOME}/.config/db-backupper/projects"
-        "/etc/db-backupper/projects"
     )
     local line_number=1
     local project_name
@@ -182,9 +174,7 @@ action_list_projects() {
 load_legacy_config() {
     local config_file=""
     local config_locations=(
-        "./backup.conf"
         "${HOME}/.config/db-backupper/backup.conf"
-        "/etc/db-backupper/backup.conf"
     )
     local location
 
@@ -207,9 +197,7 @@ load_project_config() {
     local project_name="$1"
     local config_file=""
     local config_locations=(
-        "./.db-backupper/projects/${project_name}.conf"
         "${HOME}/.config/db-backupper/projects/${project_name}.conf"
-        "/etc/db-backupper/projects/${project_name}.conf"
     )
     local location
 

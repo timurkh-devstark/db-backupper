@@ -54,15 +54,15 @@ This guide covers development setup, testing procedures, architecture details, a
 
 2. **Development Configuration**:
    ```bash
-   # Copy example legacy configuration
-   cp backup.conf.example backup.conf
+   # Copy example legacy configuration into the user-scoped config directory
+   mkdir -p ~/.config/db-backupper/projects
+   cp backup.conf.example ~/.config/db-backupper/backup.conf
    
    # Or create a named project config
-   mkdir -p ./.db-backupper/projects
-   cp project.conf.example ./.db-backupper/projects/app-dev.conf
+   cp project.conf.example ~/.config/db-backupper/projects/app-dev.conf
 
    # Edit for local testing
-   nano backup.conf
+   nano ~/.config/db-backupper/backup.conf
    ```
    
    Example development configuration:
@@ -120,12 +120,12 @@ db-backupper/
 - **PATH management**: Robust PATH setup for cron environments
 - **Command validation**: Check for required system dependencies
 - **Resource monitoring**: Disk space, memory usage, timeout handling
-- **Configuration discovery**: Multi-location config file resolution
+- **Configuration discovery**: User-scoped config resolution
 
 #### `config.sh` - Configuration Management
 - **Secure loading**: Prevents code injection via `load_config_secure()`
 - **Variable validation**: Whitelist-based configuration validation
-- **Multi-location support**: legacy `backup.conf` and named `projects/<name>.conf`
+- **User-scoped config support**: `~/.config/db-backupper/backup.conf` and `~/.config/db-backupper/projects/<name>.conf`
 - **Error handling**: Comprehensive validation with detailed error messages
 
 #### `database.sh` - PostgreSQL Operations

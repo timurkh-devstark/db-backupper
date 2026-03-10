@@ -2,39 +2,131 @@
 # Setup wizard and migration helpers for db-backupper
 
 find_active_legacy_config_for_setup() {
+    local config_locations=(
+        "${HOME}/.config/db-backupper/backup.conf"
+        "/etc/db-backupper/backup.conf"
+        "./backup.conf"
+    )
     local legacy_config=""
+    local placeholder_config=""
+    local config_status=""
 
-    if ! legacy_config="$(find_legacy_config_file)"; then
-        log_error "Legacy configuration file not found."
-        log_error "Expected one of:"
-        log_error "  - ./backup.conf"
-        log_error "  - ${HOME}/.config/db-backupper/backup.conf"
-        log_error "  - /etc/db-backupper/backup.conf"
+    for legacy_config in "${config_locations[@]}"; do
+        [[ -f "$legacy_config" ]] || continue
+
+        config_status="$(classify_legacy_config_for_setup "$legacy_config")"
+
+        case "$config_status" in
+            configured)
+                echo "$legacy_config"
+                return 0
+                ;;
+            template)
+                if [[ -z "$placeholder_config" ]]; then
+                    placeholder_config="$legacy_config"
+                fi
+                ;;
+            invalid)
+                log_warning "Skipping invalid legacy config during setup: ${legacy_config}"
+                ;;
+        esac
+    done
+
+    if [[ -n "$placeholder_config" ]]; then
+        log_error "Found only an unconfigured legacy template at: ${placeholder_config}"
+        log_error "Edit backup.conf with real values first or create a named config from project.conf.example."
         return 1
     fi
 
-    echo "$legacy_config"
+    log_error "Legacy configuration file not found."
+    log_error "Expected one of:"
+    log_error "  - ${HOME}/.config/db-backupper/backup.conf"
+    log_error "  - /etc/db-backupper/backup.conf"
+    log_error "  - ./backup.conf"
+    return 1
+}
+
+classify_legacy_config_for_setup() {
+    local config_file="$1"
+    local inspection_output=""
+    local -a inspection_lines=()
+    local s3_bucket=""
+    local postgres_uri=""
+    local docker_container=""
+
+    if ! inspection_output="$(
+        reset_config_vars
+        load_config_secure "$config_file" >/dev/null 2>&1
+        validate_config >/dev/null 2>&1
+        printf '%s\n%s\n%s\n' "${S3_BUCKET_NAME:-}" "${POSTGRES_URI:-}" "${DOCKER_CONTAINER_NAME:-}"
+    )"; then
+        echo "invalid"
+        return 0
+    fi
+
+    mapfile -t inspection_lines <<< "$inspection_output"
+    s3_bucket="${inspection_lines[0]:-}"
+    postgres_uri="${inspection_lines[1]:-}"
+    docker_container="${inspection_lines[2]:-}"
+
+    if [[ "$s3_bucket" == "your-s3-bucket-name" ]] || [[ "$postgres_uri" == "postgresql://user:password@localhost:5432/dbname" ]] || [[ "$docker_container" == "your_postgres_container_name" ]]; then
+        echo "template"
+        return 0
+    fi
+
+    echo "configured"
+}
+
+ensure_project_config_target_writable() {
+    local project_config_path="$1"
+    local project_config_dir=""
+    local nearest_existing_dir=""
+
+    project_config_dir="$(dirname "$project_config_path")"
+    nearest_existing_dir="$project_config_dir"
+
+    while [[ ! -d "$nearest_existing_dir" ]]; do
+        nearest_existing_dir="$(dirname "$nearest_existing_dir")"
+    done
+
+    if [[ ! -w "$nearest_existing_dir" ]]; then
+        log_error "Project config target is not writable: ${project_config_path}"
+        log_error "Nearest existing directory without write access: ${nearest_existing_dir}"
+        return 1
+    fi
+
+    return 0
+}
+
+ensure_legacy_config_target_writable() {
+    local legacy_config_path="$1"
+    local legacy_config_dir=""
+    local nearest_existing_dir=""
+
+    legacy_config_dir="$(dirname "$legacy_config_path")"
+    nearest_existing_dir="$legacy_config_dir"
+
+    while [[ ! -d "$nearest_existing_dir" ]]; do
+        nearest_existing_dir="$(dirname "$nearest_existing_dir")"
+    done
+
+    if [[ ! -w "$nearest_existing_dir" ]]; then
+        log_error "Legacy config target is not writable: ${legacy_config_path}"
+        log_error "Nearest existing directory without write access: ${nearest_existing_dir}"
+        return 1
+    fi
+
+    return 0
 }
 
 get_project_config_target_path() {
     local project_name="$1"
-    local legacy_config_path="$2"
 
-    case "$legacy_config_path" in
-        "./backup.conf")
-            echo "./.db-backupper/projects/${project_name}.conf"
-            ;;
-        "${HOME}/.config/db-backupper/backup.conf")
-            echo "${HOME}/.config/db-backupper/projects/${project_name}.conf"
-            ;;
-        "/etc/db-backupper/backup.conf")
-            echo "/etc/db-backupper/projects/${project_name}.conf"
-            ;;
-        *)
-            log_error "Unsupported legacy config location: $legacy_config_path"
-            return 1
-            ;;
-    esac
+    echo "${HOME}/.config/db-backupper/projects/${project_name}.conf"
+}
+
+get_user_legacy_config_target_path() {
+    echo "${HOME}/.config/db-backupper/backup.conf"
 }
 
 print_setup_usage() {
@@ -52,8 +144,8 @@ prompt_setup_mode() {
     echo "Legacy configuration found at: ${legacy_config_path}"
     echo ""
     echo "Choose setup mode:"
-    echo "1. Keep legacy mode"
-    echo "2. Create named project from legacy config"
+    echo "1. Use user-scoped legacy mode"
+    echo "2. Create named project in ~/.config/db-backupper/projects"
     echo "3. Cancel"
 
     while true; do
@@ -112,8 +204,8 @@ print_setup_next_steps() {
 
     case "$mode" in
         legacy)
-            echo "1. Active mode: legacy"
-            echo "2. Legacy config: ${legacy_config_path}"
+            echo "1. Active mode: user-scoped legacy"
+            echo "2. Active legacy config: ${legacy_config_path}"
             echo "3. Existing commands remain valid:"
             echo "   db-backupper backup"
             echo "   db-backupper restore /path/to/dump.sql --purge"
@@ -125,8 +217,8 @@ print_setup_next_steps() {
             echo "4. Project config: ${project_config_path}"
             echo "5. Next commands to use:"
             echo "   db-backupper --project ${project_name} backup"
-            echo "   db-backupper --project ${project_name} crontab"
-            echo "6. Legacy config was kept in place and was not removed."
+            echo "   db-backupper --project ${project_name} install-cron --schedule '0 2 * * *' --prefix 'production/'"
+            echo "6. Source legacy config was not removed."
             ;;
     esac
 }
@@ -151,7 +243,9 @@ migrate_legacy_to_project() {
         return 1
     fi
 
-    if ! project_config_path="$(get_project_config_target_path "$project_name" "$legacy_config_path")"; then
+    project_config_path="$(get_project_config_target_path "$project_name")"
+
+    if ! ensure_project_config_target_writable "$project_config_path"; then
         return 1
     fi
 
@@ -171,15 +265,49 @@ migrate_legacy_to_project() {
     print_setup_next_steps "project" "$legacy_config_path" "$project_name" "$project_config_path"
 }
 
-action_setup_keep_legacy() {
+ensure_user_legacy_config() {
     local legacy_config_path=""
+    local target_legacy_config_path=""
 
     if ! legacy_config_path="$(find_active_legacy_config_for_setup)"; then
         return 1
     fi
 
-    log_info "Keeping legacy configuration mode."
-    print_setup_next_steps "legacy" "$legacy_config_path"
+    target_legacy_config_path="$(get_user_legacy_config_target_path)"
+
+    if [[ "$legacy_config_path" != "$target_legacy_config_path" ]]; then
+        if [[ -f "$target_legacy_config_path" ]]; then
+            log_error "User-scoped legacy config already exists at: ${target_legacy_config_path}"
+            return 1
+        fi
+
+        if ! ensure_legacy_config_target_writable "$target_legacy_config_path"; then
+            return 1
+        fi
+
+        mkdir -p "$(dirname "$target_legacy_config_path")"
+        cp "$legacy_config_path" "$target_legacy_config_path"
+        chmod 600 "$target_legacy_config_path"
+
+        if ! (reset_config_vars; load_config_secure "$target_legacy_config_path" >/dev/null 2>&1; validate_config >/dev/null 2>&1); then
+            rm -f "$target_legacy_config_path"
+            log_error "Created user-scoped legacy config failed validation and was removed: ${target_legacy_config_path}"
+            return 1
+        fi
+
+        log_info "Created user-scoped legacy config: ${target_legacy_config_path}"
+    fi
+
+    SETUP_SELECTED_LEGACY_CONFIG_PATH="$target_legacy_config_path"
+}
+
+action_setup_keep_legacy() {
+    if ! ensure_user_legacy_config; then
+        return 1
+    fi
+
+    log_info "Using user-scoped legacy configuration mode."
+    print_setup_next_steps "legacy" "$SETUP_SELECTED_LEGACY_CONFIG_PATH"
 }
 
 action_setup() {

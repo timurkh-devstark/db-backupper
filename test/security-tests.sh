@@ -291,6 +291,33 @@ EOF
     chmod +x "${bin_dir}/${command_name}"
 }
 
+create_fake_crontab_command() {
+    local bin_dir="$1"
+
+    cat > "${bin_dir}/crontab" << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+crontab_file="${FAKE_CRONTAB_FILE:?}"
+
+if [[ "${1:-}" == "-l" ]]; then
+    if [[ -f "$crontab_file" ]]; then
+        cat "$crontab_file"
+        exit 0
+    fi
+    exit 1
+fi
+
+if [[ $# -eq 1 ]]; then
+    cp "$1" "$crontab_file"
+    exit 0
+fi
+
+cat > "$crontab_file"
+EOF
+    chmod +x "${bin_dir}/crontab"
+}
+
 # Test 7: Project config validation
 test_project_config_support() {
     test_info "Testing project configuration support..."
@@ -413,7 +440,7 @@ EOF
         test_pass "CLI rejects a missing project config"
     fi
 
-    if [[ "$project_output" == *"Active project: app-prod"* ]] && [[ "$project_output" == *"--project \"app-prod\" backup"* ]]; then
+    if [[ "$project_output" == *"Active project: app-prod"* ]] && [[ "$project_output" == *"--project 'app-prod' backup"* ]]; then
         test_pass "Project crontab output includes the active project flag"
     else
         test_fail "Project crontab output is missing the active project flag"
@@ -470,16 +497,16 @@ EOF
         test_fail "list-projects failed without legacy config or command dependencies"
     fi
 
-    if [[ "$output" == *"1. local-app -> ./.db-backupper/projects/local-app.conf"* ]] && [[ "$output" == *"2. shared -> ./.db-backupper/projects/shared.conf"* ]] && [[ "$output" == *"3. home-app -> ${temp_home}/.config/db-backupper/projects/home-app.conf"* ]]; then
-        test_pass "list-projects reports discovered projects in precedence order"
+    if [[ "$output" == *"1. home-app -> ${temp_home}/.config/db-backupper/projects/home-app.conf"* ]] && [[ "$output" == *"2. shared -> ${temp_home}/.config/db-backupper/projects/shared.conf"* ]]; then
+        test_pass "list-projects reports user-scoped projects"
     else
-        test_fail "list-projects did not report expected projects and precedence"
+        test_fail "list-projects did not report expected user-scoped projects"
     fi
 
-    if [[ "$output" != *"${temp_home}/.config/db-backupper/projects/shared.conf"* ]]; then
-        test_pass "list-projects deduplicates lower-precedence project names"
+    if [[ "$output" != *"./.db-backupper/projects/local-app.conf"* ]] && [[ "$output" != *"./.db-backupper/projects/shared.conf"* ]]; then
+        test_pass "list-projects ignores local project configs"
     else
-        test_fail "list-projects showed duplicate project names from lower-precedence configs"
+        test_fail "list-projects unexpectedly showed local project configs"
     fi
 
     if HOME="$temp_home" "$cli_path" --project app-prod list-projects >/dev/null 2>&1; then
@@ -531,7 +558,7 @@ EOF
         test_fail "setup removed legacy config unexpectedly"
     fi
 
-    if [[ "$output" == *"db-backupper --project app-prod backup"* ]] && [[ "$output" == *"db-backupper --project app-prod crontab"* ]]; then
+    if [[ "$output" == *"db-backupper --project app-prod backup"* ]] && [[ "$output" == *"db-backupper --project app-prod install-cron"* ]]; then
         test_pass "setup prints next steps for project mode"
     else
         test_fail "setup output is missing next-step commands"
@@ -555,6 +582,58 @@ EOF
         test_pass "setup rejects the global --project flag"
     fi
 
+    rm -rf "$temp_root"
+
+    temp_root=$(mktemp -d)
+    temp_home="${temp_root}/home"
+    mkdir -p "${temp_home}/.config/db-backupper"
+
+    cat > "${temp_home}/.config/db-backupper/backup.conf" << 'EOF'
+AWS_PROFILE="default"
+S3_BUCKET_NAME="your-s3-bucket-name"
+S3_BACKUP_PATH="postgres_dumps/"
+POSTGRES_URI="postgresql://user:password@localhost:5432/dbname"
+DOCKER_CONTAINER_NAME="your_postgres_container_name"
+EOF
+
+    if output=$(HOME="$temp_home" "$cli_path" setup --mode legacy 2>&1); then
+        test_fail "setup accepted an unconfigured template backup.conf"
+    else
+        if [[ "$output" == *"unconfigured legacy template"* ]]; then
+            test_pass "setup rejects template backup.conf as a real legacy config"
+        else
+            test_fail "setup rejected template backup.conf, but without the expected reason"
+        fi
+    fi
+
+    rm -rf "$temp_root"
+
+    temp_root=$(mktemp -d)
+    temp_home="${temp_root}/home"
+    temp_workdir="${temp_root}/workdir"
+    mkdir -p "${temp_home}" "${temp_workdir}"
+
+    cat > "${temp_workdir}/backup.conf" << 'EOF'
+AWS_PROFILE="legacy"
+S3_BUCKET_NAME="legacy-bucket"
+S3_BACKUP_PATH="legacy/"
+POSTGRES_URI="postgresql://user:password@localhost:5432/legacydb"
+DOCKER_CONTAINER_NAME="legacy-postgres"
+EOF
+
+    chmod 500 "${temp_home}"
+
+    if output=$(cd "$temp_workdir" && HOME="$temp_home" "$cli_path" setup --mode project --name blocked-app 2>&1); then
+        test_fail "setup unexpectedly wrote into a non-writable target path"
+    else
+        if [[ "$output" == *"Project config target is not writable"* ]]; then
+            test_pass "setup reports a clear error for non-writable project target paths"
+        else
+            test_fail "setup failed on non-writable target path without a clear message"
+        fi
+    fi
+
+    chmod 700 "${temp_home}"
     rm -rf "$temp_root"
 
     temp_root=$(mktemp -d)
@@ -583,6 +662,160 @@ EOF
     fi
 
     rm -rf "$temp_root"
+
+    temp_root=$(mktemp -d)
+    temp_home="${temp_root}/home"
+    temp_workdir="${temp_root}/workdir"
+    mkdir -p "${temp_home}" "${temp_workdir}"
+
+    cat > "${temp_workdir}/backup.conf" << 'EOF'
+AWS_PROFILE="legacy"
+S3_BUCKET_NAME="legacy-bucket"
+S3_BACKUP_PATH="legacy/"
+POSTGRES_URI="postgresql://user:password@localhost:5432/legacydb"
+DOCKER_CONTAINER_NAME="legacy-postgres"
+EOF
+
+    if output=$(cd "$temp_workdir" && HOME="$temp_home" "$cli_path" setup --mode legacy 2>/dev/null); then
+        test_pass "setup migrates local legacy config into user-scoped legacy config"
+    else
+        test_fail "setup failed to migrate local legacy config into user scope"
+    fi
+
+    if [[ -f "${temp_home}/.config/db-backupper/backup.conf" ]] && cmp -s "${temp_workdir}/backup.conf" "${temp_home}/.config/db-backupper/backup.conf"; then
+        test_pass "setup created user-scoped legacy config from local source"
+    else
+        test_fail "setup did not create expected user-scoped legacy config"
+    fi
+
+    if [[ "$(HOME="$temp_home" get_project_config_target_path app-prod)" == "${temp_home}/.config/db-backupper/projects/app-prod.conf" ]]; then
+        test_pass "project setup target path is always user-scoped"
+    else
+        test_fail "project setup target path is not user-scoped"
+    fi
+
+    rm -rf "$temp_root"
+}
+
+test_user_scoped_runtime() {
+    test_info "Testing user-scoped runtime config lookup..."
+
+    local temp_root
+    temp_root=$(mktemp -d)
+    local temp_home="${temp_root}/home"
+    local temp_workdir="${temp_root}/workdir"
+    local fake_bin="${temp_root}/bin"
+    local cli_path="${SCRIPT_DIR}/../db-backupper"
+
+    mkdir -p "${temp_home}" "${temp_workdir}" "${fake_bin}"
+
+    cat > "${temp_workdir}/backup.conf" << 'EOF'
+AWS_PROFILE="legacy"
+S3_BUCKET_NAME="legacy-bucket"
+S3_BACKUP_PATH="legacy/"
+POSTGRES_URI="postgresql://user:password@localhost:5432/legacydb"
+DOCKER_CONTAINER_NAME="legacy-postgres"
+EOF
+
+    create_stub_command "$fake_bin" "aws"
+    create_stub_command "$fake_bin" "docker"
+    create_stub_command "$fake_bin" "tar"
+    create_stub_command "$fake_bin" "find"
+    create_stub_command "$fake_bin" "sed"
+    create_stub_command "$fake_bin" "tr"
+
+    if (cd "$temp_workdir" && HOME="$temp_home" PATH="$fake_bin:$PATH" "$cli_path" crontab >/dev/null 2>&1); then
+        test_fail "runtime unexpectedly accepted local backup.conf"
+    else
+        test_pass "runtime ignores local backup.conf and requires user-scoped config"
+    fi
+
+    rm -rf "$temp_root"
+}
+
+test_cron_installation() {
+    test_info "Testing cron installation workflow..."
+
+    local temp_root
+    temp_root=$(mktemp -d)
+    local temp_home="${temp_root}/home"
+    local fake_bin="${temp_root}/bin"
+    local fake_crontab_file="${temp_root}/crontab.txt"
+    local cli_path="${SCRIPT_DIR}/../db-backupper"
+    local output=""
+
+    mkdir -p "${temp_home}/.config/db-backupper/projects" "${fake_bin}"
+
+    cat > "${temp_home}/.config/db-backupper/projects/app-prod.conf" << 'EOF'
+AWS_PROFILE="project"
+S3_BUCKET_NAME="project-bucket"
+S3_BACKUP_PATH="project/"
+POSTGRES_URI="postgresql://user:password@localhost:5432/projectdb"
+DOCKER_CONTAINER_NAME="project-postgres"
+EOF
+
+    create_stub_command "$fake_bin" "aws"
+    create_stub_command "$fake_bin" "docker"
+    create_stub_command "$fake_bin" "tar"
+    create_stub_command "$fake_bin" "find"
+    create_stub_command "$fake_bin" "sed"
+    create_stub_command "$fake_bin" "tr"
+    create_fake_crontab_command "$fake_bin"
+
+    if output=$(HOME="$temp_home" PATH="$fake_bin:$PATH" FAKE_CRONTAB_FILE="$fake_crontab_file" "$cli_path" --project app-prod check-cron --log-file "${temp_home}/logs/project.log" 2>/dev/null); then
+        test_pass "check-cron validates cron readiness for project mode"
+    else
+        test_fail "check-cron failed for a valid project config"
+    fi
+
+    if [[ "$output" == *"Cron readiness check passed."* ]]; then
+        test_pass "check-cron reports success clearly"
+    else
+        test_fail "check-cron success output was missing"
+    fi
+
+    if output=$(HOME="$temp_home" PATH="$fake_bin:$PATH" FAKE_CRONTAB_FILE="$fake_crontab_file" "$cli_path" --project app-prod install-cron --schedule "0 2 * * *" --prefix "production/" --log-file "${temp_home}/logs/project.log" 2>/dev/null); then
+        test_pass "install-cron installs a managed cron job"
+    else
+        test_fail "install-cron failed for a valid project config"
+    fi
+
+    if [[ -f "$fake_crontab_file" ]] && [[ "$(grep -c '^# db-backupper managed job: project:app-prod$' "$fake_crontab_file")" -eq 1 ]] && [[ "$(grep -c -- "--project 'app-prod' backup --prefix 'production/'" "$fake_crontab_file")" -eq 1 ]]; then
+        test_pass "install-cron writes a single managed project job with project flag"
+    else
+        test_fail "install-cron did not write the expected managed project job"
+    fi
+
+    if HOME="$temp_home" PATH="$fake_bin:$PATH" FAKE_CRONTAB_FILE="$fake_crontab_file" "$cli_path" --project app-prod install-cron --schedule "invalid schedule" >/dev/null 2>&1; then
+        test_fail "install-cron accepted an invalid schedule"
+    else
+        test_pass "install-cron rejects invalid schedules"
+    fi
+
+    if HOME="$temp_home" PATH="$fake_bin:$PATH" FAKE_CRONTAB_FILE="$fake_crontab_file" "$cli_path" --project app-prod install-cron --schedule "15 4 * * *" --prefix "nightly/" --log-file "${temp_home}/logs/project.log" >/dev/null 2>&1; then
+        test_pass "install-cron can replace an existing managed job"
+    else
+        test_fail "install-cron failed to replace an existing managed job"
+    fi
+
+    if [[ "$(grep -c '^# db-backupper managed job: project:app-prod$' "$fake_crontab_file")" -eq 1 ]] && [[ "$(grep -c "^15 4 \\* \\* \\* " "$fake_crontab_file")" -eq 1 ]] && [[ "$(grep -c -- "--prefix 'nightly/'" "$fake_crontab_file")" -eq 1 ]]; then
+        test_pass "install-cron replaces the previous managed job instead of duplicating it"
+    else
+        test_fail "install-cron duplicated the managed job or kept the old schedule"
+    fi
+
+    mkdir -p "${temp_home}/blocked-logs"
+    chmod 500 "${temp_home}/blocked-logs"
+
+    if HOME="$temp_home" PATH="$fake_bin:$PATH" FAKE_CRONTAB_FILE="$fake_crontab_file" "$cli_path" --project app-prod check-cron --log-file "${temp_home}/blocked-logs/project.log" >/dev/null 2>&1; then
+        test_fail "check-cron accepted a non-writable existing log directory"
+    else
+        test_pass "check-cron rejects a non-writable existing log directory"
+    fi
+
+    chmod 700 "${temp_home}/blocked-logs"
+
+    rm -rf "$temp_root"
 }
 
 # Main test runner
@@ -601,6 +834,8 @@ main() {
     test_cli_project_flag
     test_list_projects
     test_setup_command
+    test_user_scoped_runtime
+    test_cron_installation
     
     # Report results
     echo

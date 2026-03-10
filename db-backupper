@@ -28,9 +28,8 @@ usage() {
     echo "Usage: db-backupper [--project <name>] <action> [options]"
     echo ""
     echo "Global options:"
-    echo "  --project <name>            Use a named project config from ./.db-backupper/projects/,"
-    echo "                              ~/.config/db-backupper/projects/, or /etc/db-backupper/projects/."
-    echo "                              If omitted, the legacy backup.conf lookup is used."
+    echo "  --project <name>            Use a named project config from ~/.config/db-backupper/projects/."
+    echo "                              If omitted, the user-scoped legacy backup.conf lookup is used."
     echo ""
     echo "Actions:"
     echo "  backup [--prefix <string>]  Dump PostgreSQL DB, compress, and upload to S3."
@@ -46,19 +45,19 @@ usage() {
     echo "  restore-legacy <s3_url>     (DEPRECATED) Download archive from S3, decompress, and restore to PostgreSQL DB in one step."
     echo "                              <s3_url> is the full S3 path, e.g., s3://your-bucket/postgres_dumps/dbname_timestamp.tar.gz"
     echo "  crontab                     Generate example crontab entries for automated backups."
+    echo "  check-cron [--log-file <path>]"
+    echo "                              Validate that the active config is runnable from cron."
+    echo "  install-cron --schedule <expr> [--prefix <string>] [--log-file <path>]"
+    echo "                              Install or replace a managed cron backup job."
     echo "  list-projects               List available named project configs."
     echo "  setup                       Run setup wizard for legacy or project config mode."
     echo "  help                        Show this help message."
     echo ""
-    echo "Legacy config lookup:"
-    echo "  ./backup.conf"
+    echo "Active legacy config lookup:"
     echo "  ~/.config/db-backupper/backup.conf"
-    echo "  /etc/db-backupper/backup.conf"
     echo ""
-    echo "Project config lookup:"
-    echo "  ./.db-backupper/projects/<name>.conf"
+    echo "Active project config lookup:"
     echo "  ~/.config/db-backupper/projects/<name>.conf"
-    echo "  /etc/db-backupper/projects/<name>.conf"
     echo ""
     echo "Example workflow:"
     echo "  1. db-backupper --project production download s3://bucket/path/dbname_timestamp.tar.gz"
@@ -212,6 +211,12 @@ main() {
             ;;
         crontab)
             action_crontab
+            ;;
+        check-cron)
+            action_check_cron "$@"
+            ;;
+        install-cron)
+            action_install_cron "$@"
             ;;
         help|--help|-h)
             usage

@@ -7,7 +7,7 @@ A professional, modular tool that automates PostgreSQL database backup and resto
 - **Modular Architecture**: Clean separation of concerns with dedicated modules for configuration, database operations, backup, and restore functionality
 - **Global Command**: Install as `db-backupper` command available system-wide or per-user
 - **Cron-Ready**: Enhanced PATH handling and logging for reliable automated backups
-- **Flexible Configuration**: Multiple configuration file locations for different deployment scenarios
+- **User-Scoped Configuration**: Active configs live under `~/.config/db-backupper`
 - **Comprehensive Error Handling**: Robust error checking and informative logging
 - **Legacy Compatibility**: Maintains all existing functionality while improving structure
 
@@ -36,6 +36,7 @@ A professional, modular tool that automates PostgreSQL database backup and resto
    ```bash
    sudo ./install.sh
    ```
+   This installs the binary system-wide, but active configs are still created under the invoking user's `~/.config/db-backupper`.
    
    Or install for current user only:
    ```bash
@@ -44,14 +45,10 @@ A professional, modular tool that automates PostgreSQL database backup and resto
 
 3. **Configure:**
    ```bash
-   # Legacy mode: edit the configuration file created during installation
-   sudo nano /etc/db-backupper/backup.conf  # system-wide
-   # OR
-   nano ~/.config/db-backupper/backup.conf  # user installation
+   # Legacy mode: edit the user-scoped configuration file
+   nano ~/.config/db-backupper/backup.conf
 
    # Project mode: copy the project template and create one file per project
-   sudo cp /etc/db-backupper/projects/example.conf /etc/db-backupper/projects/app-prod.conf
-   # OR
    cp ~/.config/db-backupper/projects/example.conf ~/.config/db-backupper/projects/app-prod.conf
    ```
 
@@ -63,6 +60,12 @@ db-backupper backup
 
 # Run setup wizard for legacy or project mode
 db-backupper setup
+
+# Validate cron readiness for the active config
+db-backupper --project app-prod check-cron
+
+# Install or replace a managed cron backup job
+db-backupper --project app-prod install-cron --schedule "0 2 * * *" --prefix "production/"
 
 # List available named project configs
 db-backupper list-projects
@@ -85,19 +88,15 @@ db-backupper --project app-prod restore ./dump_dbname_20241201_120000.sql --purg
 
 ## Configuration
 
-### Legacy Configuration File Locations
+### Legacy Configuration File Location
 
-If `--project` is not provided, the tool looks for `backup.conf` in the following order:
-1. `./backup.conf` (current directory)
-2. `~/.config/db-backupper/backup.conf` (user config)
-3. `/etc/db-backupper/backup.conf` (system config)
+If `--project` is not provided, the tool uses:
+1. `~/.config/db-backupper/backup.conf`
 
-### Project Configuration File Locations
+### Project Configuration File Location
 
-If `--project <name>` is provided, the tool looks for `<name>.conf` in the following order:
-1. `./.db-backupper/projects/<name>.conf`
-2. `~/.config/db-backupper/projects/<name>.conf`
-3. `/etc/db-backupper/projects/<name>.conf`
+If `--project <name>` is provided, the tool uses:
+1. `~/.config/db-backupper/projects/<name>.conf`
 
 ### Configuration Variables
 
@@ -175,20 +174,20 @@ Your AWS user/role needs these S3 permissions:
 
 ### Automated Backups with Cron
 
-Create automated backups using cron. The tool includes enhanced PATH handling for reliable cron execution:
+Create automated backups using the built-in managed cron installer:
 
 ```bash
-# Edit crontab
-crontab -e
+# Validate that cron execution will work for the active config
+db-backupper --project app-prod check-cron
 
-# Add backup job (runs every 3 days at midnight)
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-0 0 */3 * * db-backupper backup --prefix "scheduled/" >> /var/log/db-backupper.log 2>&1
+# Install or replace a managed cron job
+db-backupper --project app-prod install-cron --schedule "0 2 * * *" --prefix "production/"
 
-# For user installation, ensure PATH includes ~/.local/bin
-PATH=/home/username/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Inspect example cron lines without installing them
+db-backupper --project app-prod crontab
 ```
+
+`install-cron` writes a managed entry into the current user's crontab and runs a cron-style self-check first, so it refuses to install the job if the active config, executable path, required commands, or log path are not cron-ready.
 
 ### Command Reference
 
@@ -217,9 +216,23 @@ db-backupper setup --mode legacy
 db-backupper setup --mode project --name app-prod
 ```
 
+`setup` only treats a configured `backup.conf` as a migratable legacy config. An unedited template file is ignored and reported as not configured yet. Existing `./backup.conf` or `/etc/db-backupper/backup.conf` can still be used as migration sources, but active runtime config is always moved to `~/.config/db-backupper`.
+
+#### Cron Commands
+```bash
+# Validate cron readiness for the active config
+db-backupper --project app-prod check-cron
+
+# Install or replace a managed cron job
+db-backupper --project app-prod install-cron --schedule "0 2 * * *" --prefix "production/"
+
+# Override the log file if needed
+db-backupper --project app-prod install-cron --schedule "0 2 * * *" --prefix "production/" --log-file ~/.local/log/db-backupper/app-prod.log
+```
+
 #### Project Discovery
 ```bash
-# List available project configs from local, user, and system locations
+# List available project configs from ~/.config/db-backupper/projects
 db-backupper list-projects
 ```
 

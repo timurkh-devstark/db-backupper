@@ -40,9 +40,7 @@ db-backupper restore ./dump_file.sql --purge
 
 ### Configuration
 Configuration is read from `backup.conf` in this order:
-1. `./backup.conf` (current directory)
-2. `~/.config/db-backupper/backup.conf` (user config)  
-3. `/etc/db-backupper/backup.conf` (system config)
+1. `~/.config/db-backupper/backup.conf` (user config)
 
 Copy `backup.conf.example` to create your configuration.
 
@@ -75,7 +73,7 @@ Test operations manually using:
 
 ## Common Workflows
 
-1. **Development Setup**: Copy `backup.conf.example` to `backup.conf` and configure AWS/PostgreSQL settings
+1. **Development Setup**: Copy `backup.conf.example` to `~/.config/db-backupper/backup.conf` and configure AWS/PostgreSQL settings
 2. **Installation Testing**: Use `./install.sh --user` for user-level testing
 3. **Backup Testing**: Use `--prefix "test/"` to separate test backups
 4. **Restore Testing**: Use `--no-purge` flag to avoid data loss during testing
