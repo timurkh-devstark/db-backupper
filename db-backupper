@@ -50,7 +50,7 @@ usage() {
     echo "  install-cron --schedule <expr> [--prefix <string>] [--log-file <path>]"
     echo "                              Install or replace a managed cron backup job."
     echo "  list-projects               List available named project configs."
-    echo "  setup                       Run setup wizard for legacy or project config mode."
+    echo "  setup                       Run setup wizard for fresh setup or legacy migration."
     echo "  help                        Show this help message."
     echo ""
     echo "Active legacy config lookup:"

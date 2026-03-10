@@ -58,7 +58,7 @@ A professional, modular tool that automates PostgreSQL database backup and resto
 # Create a backup with legacy backup.conf
 db-backupper backup
 
-# Run setup wizard for legacy or project mode
+# Run setup wizard for fresh setup or migration into ~/.config
 db-backupper setup
 
 # Validate cron readiness for the active config
@@ -216,7 +216,7 @@ db-backupper setup --mode legacy
 db-backupper setup --mode project --name app-prod
 ```
 
-`setup` only treats a configured `backup.conf` as a migratable legacy config. An unedited template file is ignored and reported as not configured yet. Existing `./backup.conf` or `/etc/db-backupper/backup.conf` can still be used as migration sources, but active runtime config is always moved to `~/.config/db-backupper`.
+`setup` supports both fresh setup and migration. If no configured legacy source exists, it bootstraps new config files directly under `~/.config/db-backupper`. If `./backup.conf` or `/etc/db-backupper/backup.conf` exists and is configured, `setup` can migrate from it into the user-scoped runtime config.
 
 #### Cron Commands
 ```bash

@@ -586,24 +586,24 @@ EOF
 
     temp_root=$(mktemp -d)
     temp_home="${temp_root}/home"
-    mkdir -p "${temp_home}/.config/db-backupper"
+    mkdir -p "${temp_home}"
 
-    cat > "${temp_home}/.config/db-backupper/backup.conf" << 'EOF'
-AWS_PROFILE="default"
-S3_BUCKET_NAME="your-s3-bucket-name"
-S3_BACKUP_PATH="postgres_dumps/"
-POSTGRES_URI="postgresql://user:password@localhost:5432/dbname"
-DOCKER_CONTAINER_NAME="your_postgres_container_name"
-EOF
-
-    if output=$(HOME="$temp_home" "$cli_path" setup --mode legacy 2>&1); then
-        test_fail "setup accepted an unconfigured template backup.conf"
+    if output=$(HOME="$temp_home" "$cli_path" setup --mode legacy 2>/dev/null); then
+        test_pass "setup creates fresh user-scoped legacy config without a migration source"
     else
-        if [[ "$output" == *"unconfigured legacy template"* ]]; then
-            test_pass "setup rejects template backup.conf as a real legacy config"
-        else
-            test_fail "setup rejected template backup.conf, but without the expected reason"
-        fi
+        test_fail "setup failed to create fresh user-scoped legacy config"
+    fi
+
+    if [[ -f "${temp_home}/.config/db-backupper/backup.conf" ]]; then
+        test_pass "setup created fresh user-scoped legacy config file"
+    else
+        test_fail "setup did not create fresh user-scoped legacy config file"
+    fi
+
+    if [[ "$output" == *"Active legacy config: ${temp_home}/.config/db-backupper/backup.conf"* ]]; then
+        test_pass "setup reports the fresh legacy config path"
+    else
+        test_fail "setup did not report the fresh legacy config path"
     fi
 
     rm -rf "$temp_root"
@@ -692,6 +692,49 @@ EOF
         test_pass "project setup target path is always user-scoped"
     else
         test_fail "project setup target path is not user-scoped"
+    fi
+
+    rm -rf "$temp_root"
+
+    temp_root=$(mktemp -d)
+    temp_home="${temp_root}/home"
+    mkdir -p "${temp_home}"
+
+    if output=$(HOME="$temp_home" "$cli_path" setup --mode project --name fresh-app 2>/dev/null); then
+        test_pass "setup creates fresh project config without a migration source"
+    else
+        test_fail "setup failed to create fresh project config"
+    fi
+
+    if [[ -f "${temp_home}/.config/db-backupper/projects/fresh-app.conf" ]]; then
+        test_pass "setup created fresh project config file"
+    else
+        test_fail "setup did not create fresh project config file"
+    fi
+
+    if [[ "$output" == *"Project config: ${temp_home}/.config/db-backupper/projects/fresh-app.conf"* ]]; then
+        test_pass "setup reports the fresh project config path"
+    else
+        test_fail "setup did not report the fresh project config path"
+    fi
+
+    rm -rf "$temp_root"
+
+    temp_root=$(mktemp -d)
+    temp_home="${temp_root}/home"
+    temp_workdir="${temp_root}/workdir"
+    mkdir -p "${temp_home}" "${temp_workdir}"
+
+    if output=$(cd "$temp_workdir" && printf '1\n' | HOME="$temp_home" "$cli_path" setup 2>/dev/null); then
+        test_pass "interactive setup wizard supports fresh legacy setup"
+    else
+        test_fail "interactive setup wizard failed for fresh legacy setup"
+    fi
+
+    if [[ -f "${temp_home}/.config/db-backupper/backup.conf" ]]; then
+        test_pass "interactive fresh legacy setup created user-scoped config"
+    else
+        test_fail "interactive fresh legacy setup did not create user-scoped config"
     fi
 
     rm -rf "$temp_root"
