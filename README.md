@@ -107,6 +107,7 @@ Legacy and project config files use the same variables:
 AWS_PROFILE="your-aws-profile"           # AWS CLI profile name
 S3_BUCKET_NAME="your-s3-bucket-name"     # S3 bucket for backups
 S3_BACKUP_PATH="postgres_dumps/"         # Optional S3 path prefix
+S3_RETENTION_KEEP_LAST="7"               # Keep the newest 7 successful backups
 
 # PostgreSQL Configuration  
 POSTGRES_URI="postgresql://user:password@localhost:5432/dbname"
@@ -151,7 +152,9 @@ Your AWS user/role needs these S3 permissions:
             "Action": [
                 "s3:PutObject",
                 "s3:GetObject",
-                "s3:ListBucket"
+                "s3:ListBucket",
+                "s3:GetObjectTagging",
+                "s3:PutObjectTagging"
             ],
             "Resource": [
                 "arn:aws:s3:::your-bucket-name",
@@ -171,6 +174,44 @@ Your AWS user/role needs these S3 permissions:
 5. **For EC2 instances**: Verify IAM role is attached in EC2 console
 
 ## Advanced Usage
+
+### Keep the Last N Successful Backups
+
+Every backup requires an explicit positive `S3_RETENTION_KEEP_LAST` value. Retention is applied independently for each combination of S3 path, command-line prefix, and database name.
+
+After the archive upload completes, `db-backupper` verifies the remote object size and then applies these tags:
+
+1. The newest N matching archives receive `db-backupper-retention=active`.
+2. Older matching archives receive `db-backupper-retention=expired`.
+3. No S3 object is deleted directly by `db-backupper`.
+4. If dump creation, upload, or upload verification fails, retention is not run.
+
+Configure the bucket lifecycle to expire only objects carrying the `expired` tag. For a real recovery window, enable S3 bucket versioning and use a rule like this:
+
+```json
+{
+  "ID": "db-backupper-expired",
+  "Status": "Enabled",
+  "Filter": {
+    "Tag": {
+      "Key": "db-backupper-retention",
+      "Value": "expired"
+    }
+  },
+  "Expiration": {
+    "Days": 1
+  },
+  "NoncurrentVersionExpiration": {
+    "NoncurrentDays": 7
+  }
+}
+```
+
+Merge this rule into the bucket's existing lifecycle configuration. AWS `put-bucket-lifecycle-configuration` replaces the complete configuration, so do not submit this rule by itself when the bucket already has unrelated rules.
+
+`Expiration.Days` is calculated from the object's original creation time, not from the moment the `expired` tag is added. With versioning enabled, lifecycle creates a delete marker and the previous object version remains recoverable for `NoncurrentDays`. Without versioning, an old object can be permanently expired as soon as lifecycle processes its new tag.
+
+Disable age-based expiration rules that target the entire backup prefix. Such rules ignore the `active` tag and can still delete the protected newest N backups.
 
 ### Automated Backups with Cron
 

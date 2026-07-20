@@ -4,6 +4,7 @@
 AWS_PROFILE="default"
 S3_BUCKET_NAME="your-s3-bucket-name"
 S3_BACKUP_PATH="postgres_dumps/your-project/"
+S3_RETENTION_KEEP_LAST="7"
 
 
 # --- PostgreSQL Configuration ---

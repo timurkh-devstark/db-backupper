@@ -14,6 +14,7 @@ The tool follows a clean modular architecture:
 - **lib/**: Modular library components
   - `config.sh`: Configuration loading and validation
   - `database.sh`: PostgreSQL operations (pg_dump, psql via Docker)
+  - `retention.sh`: S3 upload verification and keep-last retention tags
   - `backup.sh`: Backup functionality with S3 upload
   - `restore.sh`: Restore operations with database management
   - `utils.sh`: Logging, PATH setup, command validation
@@ -49,7 +50,8 @@ Copy `backup.conf.example` to create your configuration.
 ### Required Dependencies
 - AWS CLI (configured with appropriate S3 permissions)
 - Docker (with PostgreSQL container)
-- Standard Unix tools: tar, find, sed, tr
+- Standard Unix tools: tar, find, sed, tr, sort, stat
+- jq for preserving existing S3 object tags
 - PostgreSQL client tools (pg_dump, psql) available inside the Docker container
 
 ### Error Handling
@@ -64,6 +66,7 @@ The tool includes robust PATH setup for cron environments in `utils.sh:22-35`, e
 - Configuration files are automatically set to 600 permissions
 - Database credentials passed as environment variables to Docker
 - S3 access requires specific IAM permissions (PutObject, GetObject, ListBucket)
+- Retention additionally requires GetObjectTagging and PutObjectTagging
 
 ### Testing Approach
 Test operations manually using:

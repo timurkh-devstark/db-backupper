@@ -10,7 +10,7 @@ This guide covers development setup, testing procedures, architecture details, a
    ```bash
    # Essential development tools
    sudo apt update
-   sudo apt install -y bash shellcheck git make
+   sudo apt install -y bash shellcheck git make jq
    
    # For testing
    sudo apt install -y bats-core  # Bash testing framework (optional)
@@ -70,6 +70,7 @@ This guide covers development setup, testing procedures, architecture details, a
    AWS_PROFILE="default"
    S3_BUCKET_NAME="your-test-bucket"
    S3_BACKUP_PATH="dev_backups/"
+   S3_RETENTION_KEEP_LAST="7"
    POSTGRES_URI="postgresql://testuser:testpassword@localhost:5432/testdb"
    DOCKER_CONTAINER_NAME="postgres-test"
    ```
@@ -100,6 +101,7 @@ db-backupper/
 │   ├── config.sh           # Secure configuration loading and validation
 │   ├── setup.sh            # Setup wizard and legacy-to-project migration
 │   ├── database.sh         # PostgreSQL operations, URI parsing, security
+│   ├── retention.sh        # S3 upload verification and keep-last tagging
 │   ├── backup.sh           # Backup workflow, S3 operations, path security
 │   └── restore.sh          # Restore workflow, archive security, validation
 ├── test/                    # Test suites and validation
@@ -140,6 +142,12 @@ db-backupper/
 - **Archive creation**: Compressed tar.gz backup files
 - **Path security**: Sanitized S3 prefix handling
 - **Progress tracking**: Logging and status reporting
+
+#### `retention.sh` - Backup Retention
+- **Upload verification**: Compares the local archive size with S3 `ContentLength`
+- **Keep-last policy**: Sorts database archives by timestamp and protects the newest N
+- **Deferred expiration**: Marks older objects with `db-backupper-retention=expired`
+- **Tag preservation**: Keeps unrelated object tags intact when updating retention state
 
 #### `restore.sh` - Restore Workflow  
 - **Download management**: S3 download with validation
@@ -194,6 +202,9 @@ The security test suite (`test/security-tests.sh`) provides comprehensive valida
 ```bash
 # Run security tests
 ./test/security-tests.sh
+
+# Run S3 retention unit tests
+./test/retention-tests.sh
 ```
 
 **Test Categories**:

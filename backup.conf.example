@@ -14,6 +14,10 @@ S3_BUCKET_NAME="your-s3-bucket-name"
 # Ensure it ends with a slash if specified.
 S3_BACKUP_PATH="postgres_dumps/"
 
+# Number of newest successful backups to protect from lifecycle expiration.
+# Older backups are tagged with db-backupper-retention=expired.
+S3_RETENTION_KEEP_LAST="7"
+
 
 # --- PostgreSQL Configuration ---
 # PostgreSQL connection URI

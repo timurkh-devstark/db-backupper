@@ -5,6 +5,7 @@ reset_config_vars() {
     unset AWS_PROFILE
     unset S3_BUCKET_NAME
     unset S3_BACKUP_PATH
+    unset S3_RETENTION_KEEP_LAST
     unset POSTGRES_URI
     unset DOCKER_CONTAINER_NAME
 }
@@ -41,7 +42,7 @@ load_config_secure() {
             
             # Validate against whitelist
             case "$key" in
-                AWS_PROFILE|S3_BUCKET_NAME|S3_BACKUP_PATH|POSTGRES_URI|DOCKER_CONTAINER_NAME)
+                AWS_PROFILE|S3_BUCKET_NAME|S3_BACKUP_PATH|S3_RETENTION_KEEP_LAST|POSTGRES_URI|DOCKER_CONTAINER_NAME)
                     # Remove quotes if present
                     value="${value%\"}"
                     value="${value#\"}"
@@ -54,7 +55,7 @@ load_config_secure() {
                     ;;
                 *)
                     log_error "Unknown configuration variable '$key' at line $line_num"
-                    log_error "Valid variables are: AWS_PROFILE, S3_BUCKET_NAME, S3_BACKUP_PATH, POSTGRES_URI, DOCKER_CONTAINER_NAME"
+                    log_error "Valid variables are: AWS_PROFILE, S3_BUCKET_NAME, S3_BACKUP_PATH, S3_RETENTION_KEEP_LAST, POSTGRES_URI, DOCKER_CONTAINER_NAME"
                     exit 1
                     ;;
             esac
@@ -252,6 +253,18 @@ validate_config() {
         log_error "Configuration validation failed. Please check the active config file."
         exit 1
     fi
-    
+
     log_info "Configuration validation passed successfully."
+}
+
+validate_retention_config() {
+    if [[ -z "${S3_RETENTION_KEEP_LAST:-}" ]]; then
+        log_error "S3_RETENTION_KEEP_LAST is required for backups."
+        return 1
+    fi
+
+    if [[ ! "$S3_RETENTION_KEEP_LAST" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "S3_RETENTION_KEEP_LAST must be a positive integer."
+        return 1
+    fi
 }

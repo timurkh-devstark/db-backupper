@@ -16,6 +16,8 @@ source "$LIB_DIR/config.sh"
 source "$LIB_DIR/setup.sh"
 # shellcheck source=../lib/database.sh
 source "$LIB_DIR/database.sh"
+# shellcheck source=../lib/retention.sh
+source "$LIB_DIR/retention.sh"
 # shellcheck source=../lib/backup.sh
 source "$LIB_DIR/backup.sh"
 # shellcheck source=../lib/restore.sh
@@ -149,6 +151,7 @@ S3_BUCKET_NAME="my-backup-bucket"
 POSTGRES_URI="postgresql://user:password@db.example.com:5432/myapp"
 DOCKER_CONTAINER_NAME="postgres_container"
 S3_BACKUP_PATH="backups/"
+S3_RETENTION_KEEP_LAST="7"
 EOF
     
     # Test that valid config is accepted

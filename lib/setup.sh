@@ -117,6 +117,7 @@ write_embedded_legacy_template() {
 AWS_PROFILE="default"
 S3_BUCKET_NAME="your-s3-bucket-name"
 S3_BACKUP_PATH="postgres_dumps/"
+S3_RETENTION_KEEP_LAST="7"
 
 
 # --- PostgreSQL Configuration ---
@@ -135,6 +136,7 @@ write_embedded_project_template() {
 AWS_PROFILE="default"
 S3_BUCKET_NAME="your-s3-bucket-name"
 S3_BACKUP_PATH="postgres_dumps/your-project/"
+S3_RETENTION_KEEP_LAST="7"
 
 
 # --- PostgreSQL Configuration ---

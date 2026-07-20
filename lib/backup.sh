@@ -33,6 +33,10 @@ sanitize_s3_prefix() {
 # Action: Backup database, compress, and upload to S3
 action_backup() {
     local backup_prefix_arg="$1" # Optional prefix from command line
+    if ! validate_retention_config; then
+        exit 1
+    fi
+
     log_info "Starting database backup..."
     parse_postgres_uri "$POSTGRES_URI"
 
@@ -74,11 +78,21 @@ action_backup() {
 
     local s3_key="${S3_BACKUP_PATH}${prefix_segment}${archive_filename}"
     local s3_full_url="s3://${S3_BUCKET_NAME}/${s3_key}"
+    local retention_prefix="${S3_BACKUP_PATH}${prefix_segment}"
 
     log_info "Uploading archive to S3: $s3_full_url"
-    aws s3 cp "$local_archive_path" "$s3_full_url" --profile "$AWS_PROFILE"
-    if [[ $? -ne 0 ]]; then
+    if ! aws s3 cp "$local_archive_path" "$s3_full_url" --profile "$AWS_PROFILE"; then
         log_error "S3 upload failed."
+        exit 1
+    fi
+
+    if ! verify_s3_upload "$local_archive_path" "$s3_key"; then
+        log_error "S3 upload verification failed. Retention was not applied."
+        exit 1
+    fi
+
+    if ! apply_backup_retention "$retention_prefix" "$DB_NAME"; then
+        log_error "Backup was uploaded, but retention could not be applied."
         exit 1
     fi
 

@@ -20,6 +20,7 @@ CONFIG_DIR="$(get_script_dir)"
 source "${SCRIPT_DIR}/lib/config.sh"
 source "${SCRIPT_DIR}/lib/setup.sh"
 source "${SCRIPT_DIR}/lib/database.sh"
+source "${SCRIPT_DIR}/lib/retention.sh"
 source "${SCRIPT_DIR}/lib/backup.sh"
 source "${SCRIPT_DIR}/lib/restore.sh"
 

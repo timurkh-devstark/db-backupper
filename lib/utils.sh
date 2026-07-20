@@ -85,6 +85,9 @@ check_all_commands() {
     check_command "find"
     check_command "sed"
     check_command "tr"
+    check_command "sort"
+    check_command "stat"
+    check_command "jq"
     # pg_dump and psql are run inside docker, so not checked on host
 }
 
