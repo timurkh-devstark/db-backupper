@@ -37,6 +37,15 @@ action_backup() {
         exit 1
     fi
 
+    local targets=()
+    read -r -a targets <<< "${S3_ADDITIONAL_TARGETS:-}"
+    local target
+    for target in "${targets[@]}"; do
+        if ! (load_s3_target "$target"); then
+            exit 1
+        fi
+    done
+
     log_info "Starting database backup..."
     parse_postgres_uri "$POSTGRES_URI"
 
@@ -76,28 +85,53 @@ action_backup() {
     tar -czf "$local_archive_path" -C "$temp_dir" "$dump_filename"
     log_info "Archive created: $local_archive_path"
 
-    local s3_key="${S3_BACKUP_PATH}${prefix_segment}${archive_filename}"
-    local s3_full_url="s3://${S3_BUCKET_NAME}/${s3_key}"
-    local retention_prefix="${S3_BACKUP_PATH}${prefix_segment}"
+    local failed=0
+    if ! (upload_backup_target "$local_archive_path" "$archive_filename" "$prefix_segment"); then
+        failed=1
+    fi
+    for target in "${targets[@]}"; do
+        if ! (load_s3_target "$target" && upload_backup_target "$local_archive_path" "$archive_filename" "$prefix_segment"); then
+            log_error "Backup target '$target' failed."
+            failed=1
+        fi
+    done
 
-    log_info "Uploading archive to S3: $s3_full_url"
-    if ! aws s3 cp "$local_archive_path" "$s3_full_url" --profile "$AWS_PROFILE"; then
-        log_error "S3 upload failed."
+    if [[ "$failed" -ne 0 ]]; then
+        trap - EXIT
+        log_error "Backup did not complete for every target. Archive retained at: $local_archive_path"
         exit 1
+    fi
+
+    log_info "Backup verified in all $((1 + ${#targets[@]})) target(s)."
+    rm -rf -- "$temp_dir"
+    trap - EXIT
+}
+
+upload_backup_target() {
+    local local_archive_path="$1"
+    local archive_filename="$2"
+    local prefix_segment="$3"
+    local retention_prefix="${S3_BACKUP_PATH:-}${prefix_segment}"
+    local s3_key="${retention_prefix}${archive_filename}"
+    local s3_full_url="s3://${S3_BUCKET_NAME}/${s3_key}"
+
+    log_info "Uploading archive to $s3_full_url (profile: $AWS_PROFILE)"
+    if ! aws s3 cp "$local_archive_path" "$s3_full_url" --profile "$AWS_PROFILE"; then
+        log_error "S3 upload failed: $s3_full_url"
+        return 1
     fi
 
     if ! verify_s3_upload "$local_archive_path" "$s3_key"; then
         log_error "S3 upload verification failed. Retention was not applied."
-        exit 1
+        return 1
     fi
 
-    if ! apply_backup_retention "$retention_prefix" "$DB_NAME"; then
-        log_error "Backup was uploaded, but retention could not be applied."
-        exit 1
+    if [[ "$S3_RETENTION_KEEP_LAST" != "0" ]]; then
+        if ! apply_backup_retention "$retention_prefix" "$DB_NAME"; then
+            log_error "Backup was uploaded, but retention could not be applied."
+            return 1
+        fi
     fi
 
-    log_info "Backup successful! Archive uploaded to $s3_full_url"
-    log_info "You can restore using: db-backupper download $s3_full_url and then db-backupper restore path/to/downloaded/dump.sql"
-    rm -rf -- "$temp_dir" # Explicit cleanup, trap will also run
-    trap - EXIT # Clear trap
+    log_info "Backup successful: $s3_full_url"
 }

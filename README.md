@@ -108,11 +108,67 @@ AWS_PROFILE="your-aws-profile"           # AWS CLI profile name
 S3_BUCKET_NAME="your-s3-bucket-name"     # S3 bucket for backups
 S3_BACKUP_PATH="postgres_dumps/"         # Optional S3 path prefix
 S3_RETENTION_KEEP_LAST="7"               # Keep the newest 7 successful backups
+S3_ADDITIONAL_TARGETS="r2"               # Optional space-separated target names
 
 # PostgreSQL Configuration  
 POSTGRES_URI="postgresql://user:password@localhost:5432/dbname"
 DOCKER_CONTAINER_NAME="your_postgres_container_name"
 ```
+
+### Multiple S3 Targets
+
+One backup run creates one archive and uploads it to the configured primary bucket
+and every name in `S3_ADDITIONAL_TARGETS`. For example:
+
+```bash
+S3_ADDITIONAL_TARGETS="r2 offsite"
+```
+
+Each additional target has a file at `~/.config/db-backupper/targets/<name>.conf`:
+
+```bash
+# ~/.config/db-backupper/targets/r2.conf
+AWS_PROFILE="r2"
+S3_BUCKET_NAME="timur-backups"
+S3_BACKUP_PATH="aicoding/postgres_dumps/"
+S3_RETENTION_KEEP_LAST="0"
+```
+
+Copy `target.conf.example` to that path and restrict the file to mode `600`.
+Target files accept only the four storage settings shown above; database settings
+stay in the project config. Target names may contain letters, digits, hyphens and
+underscores. Set a different prefix for each project's files in a shared bucket.
+The command-line `--prefix` is appended to each target's `S3_BACKUP_PATH`.
+
+Configure each provider's endpoint in its AWS CLI profile, so all upload,
+verification and retention requests go to the same provider. For R2 in the EU:
+
+```ini
+# ~/.aws/config
+[profile r2]
+region = auto
+endpoint_url = https://<ACCOUNT_ID>.eu.r2.cloudflarestorage.com
+```
+
+Store the R2 S3 access key and secret in `~/.aws/credentials` under `[r2]`.
+See [AWS CLI endpoint configuration](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-endpoints.html).
+
+All target configs are validated before dumping. Uploads run sequentially, and a
+failed upload does not skip other targets. Each uploaded object is checked against
+the local archive size. The command succeeds only if every upload, verification
+and enabled retention operation succeeds. On partial failure it exits nonzero and
+logs the retained local archive path for manual retry. It does not retry uploads
+automatically or clean up these retained archives.
+
+Cloudflare R2 does not support S3 object tags. Use `S3_RETENTION_KEEP_LAST="0"`
+to disable retention tagging for that target and configure expiration with R2
+lifecycle rules. This does not disable upload verification. Bucket locks and
+client-side encryption are separate settings; this feature does not enable them.
+See [R2 S3 compatibility](https://developers.cloudflare.com/r2/api/s3/api/).
+
+Downloads use the primary AWS profile from the selected project config. To restore
+from an additional target, download with `aws s3 cp --profile r2`, extract the
+archive, then run `db-backupper restore` on the SQL dump.
 
 ## AWS Setup
 
@@ -177,7 +233,9 @@ Your AWS user/role needs these S3 permissions:
 
 ### Keep the Last N Successful Backups
 
-Every backup requires an explicit positive `S3_RETENTION_KEEP_LAST` value. Retention is applied independently for each combination of S3 path, command-line prefix, and database name.
+Every target requires an explicit `S3_RETENTION_KEEP_LAST` value: a positive integer
+enables keep-last tagging, and `0` disables tagging. Retention is applied
+independently for each target, S3 path, command-line prefix, and database name.
 
 After the archive upload completes, `db-backupper` verifies the remote object size and then applies these tags:
 

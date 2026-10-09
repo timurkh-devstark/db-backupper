@@ -205,6 +205,9 @@ The security test suite (`test/security-tests.sh`) provides comprehensive valida
 
 # Run S3 retention unit tests
 ./test/retention-tests.sh
+
+# Multi-target uploads and partial failures (no network or database required)
+bash test/multiple-targets-tests.sh
 ```
 
 **Test Categories**:

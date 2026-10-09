@@ -101,12 +101,22 @@ if validate_retention_config >/dev/null 2>&1; then
 fi
 
 S3_RETENTION_KEEP_LAST="0"
-if validate_retention_config >/dev/null 2>&1; then
-    printf 'Zero retention count was accepted.\n' >&2
-    exit 1
-fi
+validate_retention_config
 
 S3_RETENTION_KEEP_LAST="7"
 validate_retention_config
+
+aws() {
+    case "${2:-}" in
+        list-objects-v2) printf 'postgres/app_20260720_010000.tar.gz\n' ;;
+        get-object-tagging) printf '{"TagSet":[]}' ;;
+        put-object-tagging) return 1 ;;
+        *) return 1 ;;
+    esac
+}
+if apply_backup_retention "postgres/" "app" >/dev/null 2>&1; then
+    printf 'Retention ignored a tag update failure.\n' >&2
+    exit 1
+fi
 
 printf 'Retention tests passed.\n'
