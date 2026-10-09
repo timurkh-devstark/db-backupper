@@ -1,0 +1,7 @@
+# Copy to ~/.config/db-backupper/targets/r2.conf
+# Configure credentials and endpoint_url in the AWS CLI profile.
+AWS_PROFILE="r2"
+S3_BUCKET_NAME="timur-backups"
+S3_BACKUP_PATH="aicoding/postgres_dumps/"
+# R2 does not support S3 object tags. Configure expiration in R2 lifecycle rules.
+S3_RETENTION_KEEP_LAST="0"

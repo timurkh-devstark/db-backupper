@@ -11,7 +11,7 @@ verify_s3_upload() {
     local local_size
     local remote_size
 
-    local_size=$(stat -c '%s' "$local_archive_path")
+    local_size=$(wc -c < "$local_archive_path" | tr -d '[:space:]')
     if ! remote_size=$(aws s3api head-object \
         --bucket "$S3_BUCKET_NAME" \
         --key "$s3_key" \
@@ -132,6 +132,8 @@ apply_backup_retention() {
             retention_state="$RETENTION_EXPIRED_TAG_VALUE"
         fi
 
-        set_backup_retention_state "${backup_keys[$index]}" "$retention_state"
+        if ! set_backup_retention_state "${backup_keys[$index]}" "$retention_state"; then
+            return 1
+        fi
     done
 }

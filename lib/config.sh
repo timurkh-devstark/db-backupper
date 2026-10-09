@@ -6,6 +6,7 @@ reset_config_vars() {
     unset S3_BUCKET_NAME
     unset S3_BACKUP_PATH
     unset S3_RETENTION_KEEP_LAST
+    unset S3_ADDITIONAL_TARGETS
     unset POSTGRES_URI
     unset DOCKER_CONTAINER_NAME
 }
@@ -24,6 +25,7 @@ validate_project_name() {
 # Securely load configuration without executing arbitrary code
 load_config_secure() {
     local config_file="$1"
+    local config_kind="${2:-project}"
     local line_num=0
     
     log_info "Loading configuration from: $config_file"
@@ -40,9 +42,19 @@ load_config_secure() {
             local key="${BASH_REMATCH[1]}"
             local value="${BASH_REMATCH[2]}"
             
+            if [[ "$config_kind" == "target" ]]; then
+                case "$key" in
+                    AWS_PROFILE|S3_BUCKET_NAME|S3_BACKUP_PATH|S3_RETENTION_KEEP_LAST) ;;
+                    *)
+                        log_error "Invalid S3 target variable '$key' at line $line_num"
+                        exit 1
+                        ;;
+                esac
+            fi
+
             # Validate against whitelist
             case "$key" in
-                AWS_PROFILE|S3_BUCKET_NAME|S3_BACKUP_PATH|S3_RETENTION_KEEP_LAST|POSTGRES_URI|DOCKER_CONTAINER_NAME)
+                AWS_PROFILE|S3_BUCKET_NAME|S3_BACKUP_PATH|S3_RETENTION_KEEP_LAST|S3_ADDITIONAL_TARGETS|POSTGRES_URI|DOCKER_CONTAINER_NAME)
                     # Remove quotes if present
                     value="${value%\"}"
                     value="${value#\"}"
@@ -55,7 +67,7 @@ load_config_secure() {
                     ;;
                 *)
                     log_error "Unknown configuration variable '$key' at line $line_num"
-                    log_error "Valid variables are: AWS_PROFILE, S3_BUCKET_NAME, S3_BACKUP_PATH, S3_RETENTION_KEEP_LAST, POSTGRES_URI, DOCKER_CONTAINER_NAME"
+                    log_error "Valid variables are: AWS_PROFILE, S3_BUCKET_NAME, S3_BACKUP_PATH, S3_RETENTION_KEEP_LAST, S3_ADDITIONAL_TARGETS, POSTGRES_URI, DOCKER_CONTAINER_NAME"
                     exit 1
                     ;;
             esac
@@ -263,8 +275,29 @@ validate_retention_config() {
         return 1
     fi
 
-    if [[ ! "$S3_RETENTION_KEEP_LAST" =~ ^[1-9][0-9]*$ ]]; then
-        log_error "S3_RETENTION_KEEP_LAST must be a positive integer."
+    if [[ ! "$S3_RETENTION_KEEP_LAST" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        log_error "S3_RETENTION_KEEP_LAST must be a non-negative integer (0 disables tagging)."
         return 1
     fi
+}
+
+load_s3_target() {
+    local name="$1"
+    if [[ ! "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        log_error "Invalid S3 target name: $name"
+        return 1
+    fi
+    local file="${HOME}/.config/db-backupper/targets/${name}.conf"
+    if [[ ! -f "$file" ]]; then
+        log_error "S3 target configuration not found: $file"
+        return 1
+    fi
+    unset AWS_PROFILE S3_BUCKET_NAME S3_BACKUP_PATH S3_RETENTION_KEEP_LAST
+    load_config_secure "$file" target
+    if [[ -z "${AWS_PROFILE:-}" || -z "${S3_BUCKET_NAME:-}" ]]; then
+        log_error "S3 target '$name' requires AWS_PROFILE and S3_BUCKET_NAME"
+        return 1
+    fi
+    S3_BACKUP_PATH="${S3_BACKUP_PATH:-}"
+    validate_retention_config
 }

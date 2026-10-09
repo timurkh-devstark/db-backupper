@@ -15,7 +15,7 @@ The tool follows a clean modular architecture:
   - `config.sh`: Configuration loading and validation
   - `database.sh`: PostgreSQL operations (pg_dump, psql via Docker)
   - `retention.sh`: S3 upload verification and keep-last retention tags
-  - `backup.sh`: Backup functionality with S3 upload
+  - `backup.sh`: One archive uploaded to the primary S3 bucket and additional targets
   - `restore.sh`: Restore operations with database management
   - `utils.sh`: Logging, PATH setup, command validation
 
@@ -44,6 +44,9 @@ Configuration is read from `backup.conf` in this order:
 1. `~/.config/db-backupper/backup.conf` (user config)
 
 Copy `backup.conf.example` to create your configuration.
+Additional S3 targets are named in `S3_ADDITIONAL_TARGETS` and configured in
+`~/.config/db-backupper/targets/<name>.conf`; see `target.conf.example`.
+Set `S3_RETENTION_KEEP_LAST=0` for providers without object tagging, including R2.
 
 ## Development Notes
 

@@ -5,6 +5,8 @@ AWS_PROFILE="default"
 S3_BUCKET_NAME="your-s3-bucket-name"
 S3_BACKUP_PATH="postgres_dumps/your-project/"
 S3_RETENTION_KEEP_LAST="7"
+# Additional targets from ~/.config/db-backupper/targets/<name>.conf
+S3_ADDITIONAL_TARGETS=""
 
 
 # --- PostgreSQL Configuration ---
